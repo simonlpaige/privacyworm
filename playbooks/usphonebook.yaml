@@ -1,0 +1,32 @@
+broker: usphonebook
+display_name: USPhoneBook
+homepage: https://www.usphonebook.com
+last_updated: "2026-04-22"
+maintainer: "@community"
+
+search:
+  url_template: "https://www.usphonebook.com/{first}-{last}/{state}"
+  method: browser
+  listing_selectors:
+    - "div.result-list-item"
+    - "div.people-result"
+  match_fields:
+    - first_name
+    - last_name
+    - state
+
+opt_out:
+  method: web_form
+  url: "https://www.usphonebook.com/opt-out"
+  form:
+    url_field: "input[name='listing_url']"
+    name_field: "input[name='name']"
+    submit_button: "button[type='submit']"
+  requires_confirmation: false
+  confirmation_type: none
+  manual_instructions: >
+    USPhoneBook typically processes removal within 48 hours.
+    No confirmation email is sent.
+
+rescan_days: 90
+legal_basis: "USPhoneBook voluntary opt-out"

@@ -1,0 +1,32 @@
+broker: truepeoplesearch
+display_name: TruePeopleSearch
+homepage: https://www.truepeoplesearch.com
+last_updated: "2026-04-22"
+maintainer: "@community"
+
+search:
+  url_template: "https://www.truepeoplesearch.com/results?name={first}%20{last}&citystatezip={city}%20{state}"
+  method: browser
+  listing_selectors:
+    - "div.card-summary"
+    - "div.people-result"
+  match_fields:
+    - first_name
+    - last_name
+    - city
+    - state
+
+opt_out:
+  method: web_form
+  url: "https://www.truepeoplesearch.com/removal"
+  form:
+    url_field: "input[name='record_url']"
+    submit_button: "button.btn-remove"
+  requires_confirmation: false
+  confirmation_type: none
+  manual_instructions: >
+    After submitting, TruePeopleSearch typically removes the listing
+    within 24-72 hours. No confirmation email is sent.
+
+rescan_days: 90
+legal_basis: "TruePeopleSearch voluntary removal tool"

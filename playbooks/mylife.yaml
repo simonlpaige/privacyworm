@@ -1,0 +1,48 @@
+broker: mylife
+display_name: MyLife
+homepage: https://www.mylife.com
+last_updated: "2026-04-22"
+maintainer: "@community"
+
+# NOTE: MyLife is notoriously difficult to automate. Their opt-out process
+# requires creating an account and going through multiple verification steps.
+# This playbook automates the search but the opt-out is semi-manual.
+
+search:
+  url_template: "https://www.mylife.com/pub-srch/{first}-{last}/{state}"
+  method: browser
+  listing_selectors:
+    - "div.people-search-results"
+    - "div.result-card"
+  match_fields:
+    - first_name
+    - last_name
+    - state
+
+opt_out:
+  method: email
+  email_address: "privacy@mylife.com"
+  email_subject: "Request to Remove My Personal Information"
+  email_body_template: |
+    Hello,
+
+    I am writing to request the removal of my personal information
+    from MyLife.com.
+
+    Name: {full_name}
+    Listing: {listing_url}
+    Contact email: {email}
+
+    I do not consent to my information being displayed publicly.
+    Please remove my profile and confirm removal.
+
+    Thank you.
+  requires_confirmation: false
+  confirmation_type: manual_ack
+  manual_instructions: >
+    MyLife may require you to call 1-888-704-1900 or create an account
+    to complete the removal. Check your email for a response within
+    5-10 business days.
+
+rescan_days: 90
+legal_basis: "MyLife email removal request; CCPA if CA resident"

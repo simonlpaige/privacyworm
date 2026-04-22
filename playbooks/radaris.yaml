@@ -1,0 +1,37 @@
+broker: radaris
+display_name: Radaris
+homepage: https://radaris.com
+last_updated: "2026-04-22"
+maintainer: "@community"
+
+search:
+  url_template: "https://radaris.com/p/{first}/{last}/"
+  method: browser
+  listing_selectors:
+    - "div.card-block"
+    - "div.person-card"
+  match_fields:
+    - first_name
+    - last_name
+
+opt_out:
+  method: email
+  email_address: "support@radaris.com"
+  email_subject: "Data Removal Request"
+  email_body_template: |
+    To whom it may concern,
+
+    I am requesting the removal of my personal information from Radaris.
+
+    Name: {full_name}
+    Listing URL: {listing_url}
+    Contact email: {email}
+
+    Please remove this listing and confirm the removal at your earliest convenience.
+
+    Thank you.
+  requires_confirmation: false
+  confirmation_type: none
+
+rescan_days: 90
+legal_basis: "Radaris email-based removal request"

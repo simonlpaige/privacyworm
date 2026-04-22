@@ -1,0 +1,31 @@
+broker: beenverified
+display_name: BeenVerified
+homepage: https://www.beenverified.com
+last_updated: "2026-04-22"
+maintainer: "@community"
+
+search:
+  url_template: "https://www.beenverified.com/people/{first}-{last}/{state}/"
+  method: browser
+  listing_selectors:
+    - "div.people-search-result"
+    - "li.result-item"
+  match_fields:
+    - first_name
+    - last_name
+    - state
+
+opt_out:
+  method: web_form
+  url: "https://www.beenverified.com/app/optout/search"
+  form:
+    name_field: "input[name='fn'], input[name='ln']"
+    submit_button: "button.btn-search"
+    extra_fields:
+      "input[name='state']": "{state}"
+  requires_confirmation: true
+  confirmation_type: email_link
+  confirmation_subject_contains: "BeenVerified Opt-Out"
+
+rescan_days: 90
+legal_basis: "BeenVerified voluntary opt-out"

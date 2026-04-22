@@ -1,0 +1,11 @@
+broker: badbroker
+display_name: Bad Broker
+homepage: https://www.badbroker.com
+last_updated: "2026-04-22"
+
+search:
+  url_template: "https://www.badbroker.com/{first}-{last}"
+  method: telekinesis
+
+opt_out:
+  method: carrier_pigeon

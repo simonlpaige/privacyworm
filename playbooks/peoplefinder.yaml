@@ -1,0 +1,31 @@
+broker: peoplefinder
+display_name: PeopleFinder
+homepage: https://www.peoplefinder.com
+last_updated: "2026-04-22"
+maintainer: "@community"
+
+search:
+  url_template: "https://www.peoplefinder.com/results.php?fn={first}&ln={last}&state={state}"
+  method: browser
+  listing_selectors:
+    - "div.result-row"
+    - "li.people-result"
+  match_fields:
+    - first_name
+    - last_name
+    - state
+    - city
+
+opt_out:
+  method: web_form
+  url: "https://www.peoplefinder.com/optout.php"
+  form:
+    name_field: "input[name='name']"
+    email_field: "input[name='email']"
+    url_field: "input[name='record_url']"
+    submit_button: "input[type='submit']"
+  requires_confirmation: false
+  confirmation_type: none
+
+rescan_days: 90
+legal_basis: "PeopleFinder voluntary opt-out"

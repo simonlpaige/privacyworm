@@ -1,0 +1,31 @@
+broker: whitepages
+display_name: Whitepages
+homepage: https://www.whitepages.com
+last_updated: "2026-04-22"
+maintainer: "@community"
+
+search:
+  url_template: "https://www.whitepages.com/name/{first}-{last}/{city}-{state}"
+  method: browser
+  listing_selectors:
+    - "div.serp-card"
+    - "a.ai-result"
+  match_fields:
+    - first_name
+    - last_name
+    - city
+    - state
+
+opt_out:
+  method: web_form
+  url: "https://www.whitepages.com/suppression-requests"
+  form:
+    url_field: "input[name='listing_url']"
+    name_field: "input[name='name']"
+    submit_button: "button[type='submit']"
+  requires_confirmation: true
+  confirmation_type: email_link
+  confirmation_subject_contains: "Whitepages Opt-Out"
+
+rescan_days: 90
+legal_basis: "Whitepages voluntary suppression request"

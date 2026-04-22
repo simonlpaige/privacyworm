@@ -1,0 +1,32 @@
+broker: spokeo
+display_name: Spokeo
+homepage: https://www.spokeo.com
+last_updated: "2026-04-22"
+maintainer: "@community"
+
+search:
+  url_template: "https://www.spokeo.com/{first}-{last}/{state}"
+  method: browser
+  listing_selectors:
+    - "article.person-result"
+    - "div.result-item"
+  match_fields:
+    - first_name
+    - last_name
+    - state
+    - city
+
+opt_out:
+  method: web_form
+  url: "https://www.spokeo.com/optout"
+  form:
+    email_field: "input[name='email']"
+    url_field: "input[name='listing_url']"
+    submit_button: "button[type='submit']"
+  requires_confirmation: true
+  confirmation_type: email_link
+  confirmation_subject_contains: "Spokeo Opt Out"
+  confirmation_link_text: "Confirm"
+
+rescan_days: 90
+legal_basis: "CCPA if CA resident; otherwise Spokeo voluntary opt-out program"

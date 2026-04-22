@@ -1,0 +1,31 @@
+broker: fastpeoplesearch
+display_name: FastPeopleSearch
+homepage: https://www.fastpeoplesearch.com
+last_updated: "2026-04-22"
+maintainer: "@community"
+
+search:
+  url_template: "https://www.fastpeoplesearch.com/name/{first}-{last}_{city}-{state}"
+  method: browser
+  listing_selectors:
+    - "div.card-block"
+    - "div.people-result"
+  match_fields:
+    - first_name
+    - last_name
+    - city
+    - state
+
+opt_out:
+  method: web_form
+  url: "https://www.fastpeoplesearch.com/removal"
+  form:
+    url_field: "input[name='record_url']"
+    email_field: "input[name='email']"
+    submit_button: "button[type='submit']"
+  requires_confirmation: true
+  confirmation_type: email_link
+  confirmation_subject_contains: "FastPeopleSearch Removal"
+
+rescan_days: 90
+legal_basis: "FastPeopleSearch voluntary removal"

@@ -1,0 +1,30 @@
+broker: intelius
+display_name: Intelius
+homepage: https://www.intelius.com
+last_updated: "2026-04-22"
+maintainer: "@community"
+
+search:
+  url_template: "https://www.intelius.com/people-search/{first}-{last}/{state}/"
+  method: browser
+  listing_selectors:
+    - "div.record-card"
+    - "div.result-card"
+  match_fields:
+    - first_name
+    - last_name
+    - state
+
+opt_out:
+  method: web_form
+  url: "https://www.intelius.com/opt-out"
+  form:
+    name_field: "input[name='name']"
+    email_field: "input[name='email']"
+    submit_button: "button[type='submit']"
+  requires_confirmation: true
+  confirmation_type: email_link
+  confirmation_subject_contains: "Intelius Opt Out"
+
+rescan_days: 90
+legal_basis: "Intelius voluntary opt-out; CCPA if CA resident"

@@ -1,0 +1,30 @@
+broker: testbroker
+display_name: Test Broker
+homepage: https://www.testbroker.com
+last_updated: "2026-04-22"
+maintainer: "@test"
+
+search:
+  url_template: "https://www.testbroker.com/search/{first}-{last}/{state}"
+  method: browser
+  listing_selectors:
+    - "article.person-result"
+  match_fields:
+    - first_name
+    - last_name
+    - state
+
+opt_out:
+  method: web_form
+  url: "https://www.testbroker.com/optout"
+  form:
+    email_field: "input[name='email']"
+    url_field: "input[name='listing_url']"
+    submit_button: "button[type='submit']"
+  requires_confirmation: true
+  confirmation_type: email_link
+  confirmation_subject_contains: "Opt Out"
+  confirmation_link_text: "Confirm"
+
+rescan_days: 90
+legal_basis: "Voluntary opt-out"
