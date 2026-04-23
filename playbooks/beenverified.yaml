@@ -22,7 +22,7 @@ opt_out:
     name_field: "input[name='fn'], input[name='ln']"
     submit_button: "button.btn-search"
     extra_fields:
-      "input[name='state']": "{state}"
+      "input[name='state']": "$state"
   requires_confirmation: true
   confirmation_type: email_link
   confirmation_subject_contains: "BeenVerified Opt-Out"

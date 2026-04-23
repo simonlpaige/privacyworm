@@ -1,6 +1,7 @@
 """Playwright-driven broker for web form opt-outs."""
 
 import logging
+from string import Template
 
 from privacyworm.brokers.base import BaseBroker, log_network_request
 from privacyworm.playbook import Playbook
@@ -78,10 +79,12 @@ class WebFormBroker(BaseBroker):
                 page.fill(form.name_field, full_name)
 
             for selector, value in (form.extra_fields or {}).items():
-                filled_value = value.format(
+                filled_value = Template(value).safe_substitute(
                     first=self.profile.name.first,
                     last=self.profile.name.last,
                     email=self.profile.emails[0] if self.profile.emails else "",
+                    state=self.profile.addresses[0].state if self.profile.addresses else "",
+                    city=self.profile.addresses[0].city if self.profile.addresses else "",
                 )
                 page.fill(selector, filled_value)
 

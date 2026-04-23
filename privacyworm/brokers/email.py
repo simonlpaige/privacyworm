@@ -3,6 +3,7 @@
 import logging
 import smtplib
 from email.mime.text import MIMEText
+from string import Template
 
 from privacyworm.brokers.base import BaseBroker, log_network_request
 from privacyworm.playbook import Playbook
@@ -112,7 +113,7 @@ class EmailBroker(BaseBroker):
     def _build_email_body(self, listing: dict) -> str:
         opt = self.playbook.opt_out
         if opt.email_body_template:
-            return opt.email_body_template.format(
+            return Template(opt.email_body_template).safe_substitute(
                 first=self.profile.name.first,
                 last=self.profile.name.last,
                 email=self.profile.emails[0] if self.profile.emails else "",

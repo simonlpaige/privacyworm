@@ -29,9 +29,9 @@ opt_out:
     I am writing to request the removal of my personal information
     from MyLife.com.
 
-    Name: {full_name}
-    Listing: {listing_url}
-    Contact email: {email}
+    Name: $full_name
+    Listing: $listing_url
+    Contact email: $email
 
     I do not consent to my information being displayed publicly.
     Please remove my profile and confirm removal.

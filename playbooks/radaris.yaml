@@ -23,9 +23,9 @@ opt_out:
 
     I am requesting the removal of my personal information from Radaris.
 
-    Name: {full_name}
-    Listing URL: {listing_url}
-    Contact email: {email}
+    Name: $full_name
+    Listing URL: $listing_url
+    Contact email: $email
 
     Please remove this listing and confirm the removal at your earliest convenience.
 
