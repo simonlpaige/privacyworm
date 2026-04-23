@@ -3,6 +3,8 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
+import tldextract
+
 from privacyworm.brokers.base import BaseBroker
 from privacyworm.brokers.email import EmailBroker
 from privacyworm.brokers.web_form import WebFormBroker
@@ -12,6 +14,16 @@ from privacyworm.profile import Profile
 from privacyworm.state import StateDB
 
 logger = logging.getLogger("privacyworm")
+
+
+def _registered_domain(url: str) -> str:
+    """Return the registered domain (e.g. 'spokeo.com') for a URL."""
+    extracted = tldextract.extract(url)
+    return f"{extracted.domain}.{extracted.suffix}" if extracted.suffix else extracted.domain
+
+
+def _same_registered_domain(url_a: str, url_b: str) -> bool:
+    return _registered_domain(url_a) == _registered_domain(url_b)
 
 
 def _make_broker(playbook: Playbook, profile: Profile, headed: bool = False) -> BaseBroker:
@@ -152,6 +164,12 @@ def check_inbox(profile: Profile, db: StateDB) -> list[dict]:
         for conf in confirmations:
             # Try to click the confirmation link
             for link in conf["links"]:
+                if not _same_registered_domain(link, playbook.homepage):
+                    logger.warning(
+                        "Skipping confirmation link: domain does not match broker homepage "
+                        f"(link={link!r}, homepage={playbook.homepage!r})"
+                    )
+                    continue
                 if inbox.click_confirmation_link(link):
                     db.confirm_optout(optout["id"])
                     db.update_listing_status(matching_listing["id"], "opt_out_confirmed")

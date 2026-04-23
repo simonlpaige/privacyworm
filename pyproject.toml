@@ -27,6 +27,7 @@ dependencies = [
     "pyyaml>=6.0",
     "playwright>=1.40",
     "cryptography>=41.0",
+    "tldextract>=5.0",
 ]
 
 [project.optional-dependencies]
