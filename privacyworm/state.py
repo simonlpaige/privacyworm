@@ -1,11 +1,14 @@
 """SQLite-backed state: listings found, opt-outs filed, rescan schedule."""
 
+import logging
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 from privacyworm.config import get_state_db_path
+
+logger = logging.getLogger("privacyworm")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS listings (
@@ -17,7 +20,8 @@ CREATE TABLE IF NOT EXISTS listings (
     matched_state TEXT,
     raw_snippet TEXT,
     found_at TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'found'
+    status TEXT NOT NULL DEFAULT 'found',
+    UNIQUE (broker, listing_url)
 );
 
 CREATE TABLE IF NOT EXISTS optouts (
@@ -48,6 +52,58 @@ class StateDB:
         self.conn = sqlite3.connect(str(self.db_path))
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
+        self._migrate_listings_unique_constraint()
+
+    def _migrate_listings_unique_constraint(self) -> None:
+        """Add UNIQUE(broker, listing_url) to an existing listings table if missing.
+
+        SQLite does not support ALTER TABLE ADD CONSTRAINT, so the migration creates
+        a replacement table, copies deduplicated rows with their original IDs
+        (preserving optouts foreign-key references), drops the old table, and
+        renames the new one. Rows with the same (broker, listing_url) keep only
+        the most recently inserted one (highest id).
+
+        On a fresh database the SCHEMA above already includes the constraint, so
+        this function detects that and returns immediately.
+        """
+        row = self.conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='listings'"
+        ).fetchone()
+        if row is None or "UNIQUE" in (row[0] or ""):
+            return  # fresh DB or already migrated
+
+        logger.info("Migrating listings table: adding UNIQUE(broker, listing_url)")
+
+        # Remove duplicate non-null listing_url rows, keeping the highest id per pair.
+        self.conn.execute("""
+            DELETE FROM listings
+            WHERE listing_url IS NOT NULL
+              AND id NOT IN (
+                  SELECT MAX(id) FROM listings
+                  WHERE listing_url IS NOT NULL
+                  GROUP BY broker, listing_url
+              )
+        """)
+
+        # Rebuild with constraint; preserve original IDs so optouts FK still works.
+        self.conn.execute("""
+            CREATE TABLE listings_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                broker TEXT NOT NULL,
+                listing_url TEXT,
+                matched_name TEXT,
+                matched_city TEXT,
+                matched_state TEXT,
+                raw_snippet TEXT,
+                found_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'found',
+                UNIQUE (broker, listing_url)
+            )
+        """)
+        self.conn.execute("INSERT INTO listings_new SELECT * FROM listings")
+        self.conn.execute("DROP TABLE listings")
+        self.conn.execute("ALTER TABLE listings_new RENAME TO listings")
+        self.conn.commit()
 
     def close(self) -> None:
         self.conn.close()
@@ -67,7 +123,8 @@ class StateDB:
         raw_snippet: str | None = None,
     ) -> int:
         cur = self.conn.execute(
-            "INSERT INTO listings (broker, listing_url, matched_name, matched_city, matched_state, raw_snippet, found_at) "
+            "INSERT OR IGNORE INTO listings "
+            "(broker, listing_url, matched_name, matched_city, matched_state, raw_snippet, found_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (broker, listing_url, matched_name, matched_city, matched_state, raw_snippet, self._now()),
         )

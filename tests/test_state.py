@@ -82,6 +82,13 @@ def test_summary(db: StateDB):
     assert s["confirmed_optouts"] == 1
 
 
+def test_duplicate_listing_ignored(db: StateDB):
+    db.add_listing(broker="spokeo", listing_url="https://spokeo.com/John-Doe/123")
+    db.add_listing(broker="spokeo", listing_url="https://spokeo.com/John-Doe/123")
+    listings = db.get_listings(broker="spokeo")
+    assert len(listings) == 1
+
+
 def test_rescan_scheduling(db: StateDB):
     db.set_rescan("spokeo", "2026-07-22T00:00:00+00:00")
     due = db.get_due_rescans()
