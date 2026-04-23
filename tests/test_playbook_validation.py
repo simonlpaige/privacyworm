@@ -62,6 +62,30 @@ def test_playbook_defaults():
     assert pb.maintainer == "@community"
 
 
+def test_playbook_rejects_non_https_url_template():
+    with pytest.raises(Exception):
+        Playbook(
+            broker="x",
+            display_name="X",
+            homepage="https://x.com",
+            last_updated="2026-01-01",
+            search={"url_template": "http://x.com/search", "method": "browser"},
+            opt_out={"method": "manual"},
+        )
+
+
+def test_playbook_rejects_foreign_domain_optout_url():
+    with pytest.raises(Exception):
+        Playbook(
+            broker="x",
+            display_name="X",
+            homepage="https://x.com",
+            last_updated="2026-01-01",
+            search={"url_template": "https://x.com/search", "method": "browser"},
+            opt_out={"method": "web_form", "url": "https://evil.com/steal"},
+        )
+
+
 def test_load_all_real_playbooks():
     """All shipped playbooks must parse without error."""
     playbooks_dir = Path(__file__).parent.parent / "playbooks"
