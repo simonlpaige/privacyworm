@@ -3,8 +3,9 @@
 from pathlib import Path
 from typing import Optional
 
+import tldextract
 import yaml
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 PLAYBOOKS_DIR = Path(__file__).parent.parent / "playbooks"
 
@@ -64,6 +65,11 @@ class OptOutConfig(BaseModel):
         return v
 
 
+def _registered_domain(url: str) -> str:
+    extracted = tldextract.extract(url)
+    return f"{extracted.domain}.{extracted.suffix}" if extracted.suffix else extracted.domain
+
+
 class Playbook(BaseModel):
     broker: str
     display_name: str
@@ -74,6 +80,36 @@ class Playbook(BaseModel):
     opt_out: OptOutConfig
     rescan_days: int = 90
     legal_basis: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_url_schemes_and_domains(self) -> "Playbook":
+        homepage_domain = _registered_domain(self.homepage)
+
+        url_template = self.search.url_template
+        if not url_template.startswith("https://"):
+            raise ValueError(
+                f"search.url_template must use https://, got: {url_template!r}"
+            )
+        template_domain = _registered_domain(url_template)
+        if template_domain != homepage_domain:
+            raise ValueError(
+                f"search.url_template domain {template_domain!r} does not match "
+                f"homepage domain {homepage_domain!r}"
+            )
+
+        if self.opt_out.url is not None:
+            if not self.opt_out.url.startswith("https://"):
+                raise ValueError(
+                    f"opt_out.url must use https://, got: {self.opt_out.url!r}"
+                )
+            optout_domain = _registered_domain(self.opt_out.url)
+            if optout_domain != homepage_domain:
+                raise ValueError(
+                    f"opt_out.url domain {optout_domain!r} does not match "
+                    f"homepage domain {homepage_domain!r}"
+                )
+
+        return self
 
 
 def load_playbook(path: Path) -> Playbook:
