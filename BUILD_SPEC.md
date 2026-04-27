@@ -80,7 +80,7 @@ privacyworm rescan                      # re-check brokers on schedule (run via 
 privacyworm inbox check                 # poll IMAP for confirmation emails and process them
 ```
 
-## Profile (encrypted on disk, AES-256 with user passphrase)
+## Profile (encrypted on disk, Fernet AES-128-CBC + HMAC-SHA256, key derived with Argon2id)
 
 ```yaml
 # ~/.privacyworm/profile.yaml (encrypted as profile.yaml.enc)
