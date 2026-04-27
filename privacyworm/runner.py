@@ -87,14 +87,43 @@ def scan_all(
     return results
 
 
+def _confirm_listing(listing_row: dict) -> bool:
+    """Show the listing to the user and ask whether to file an opt-out.
+
+    Returns True when the user types y/yes (case-insensitive), else False.
+    """
+    print()
+    print(f"  Broker:   {listing_row['broker']}")
+    if listing_row.get("matched_name"):
+        print(f"  Name:     {listing_row['matched_name']}")
+    location_parts = [p for p in (listing_row.get("matched_city"), listing_row.get("matched_state")) if p]
+    if location_parts:
+        print(f"  Location: {', '.join(location_parts)}")
+    if listing_row.get("listing_url"):
+        print(f"  URL:      {listing_row['listing_url']}")
+    snippet = listing_row.get("raw_snippet")
+    if snippet:
+        print(f"  Snippet:  {snippet}")
+    try:
+        answer = input("File opt-out for this listing? [y/N]: ").strip().lower()
+    except EOFError:
+        return False
+    return answer in ("y", "yes")
+
+
 def file_optouts(
     profile: Profile,
     db: StateDB,
     dry_run: bool = False,
     headed: bool = False,
     broker_name: str | None = None,
+    auto_confirm: bool = False,
 ) -> list[dict]:
-    """File opt-out requests for all found listings."""
+    """File opt-out requests for all found listings.
+
+    Unless ``auto_confirm`` is True, each listing is shown to the user and
+    they must type ``y`` / ``yes`` before the request is filed.
+    """
     listings = db.get_listings(broker=broker_name, status="found")
     outcomes = []
 
@@ -102,6 +131,16 @@ def file_optouts(
         playbook = get_playbook(listing_row["broker"])
         if not playbook:
             logger.warning(f"No playbook for broker {listing_row['broker']}, skipping")
+            continue
+
+        if not auto_confirm and not _confirm_listing(listing_row):
+            outcomes.append({
+                "broker": listing_row["broker"],
+                "listing_id": listing_row["id"],
+                "success": False,
+                "method": "skipped",
+                "details": "Skipped by user.",
+            })
             continue
 
         if playbook.opt_out.method == "manual":

@@ -168,7 +168,14 @@ def scan(broker, headed):
 @click.option("--dry-run", is_flag=True, help="Show what would be sent without actually sending.")
 @click.option("--headed", is_flag=True, help="Open a visible browser window.")
 @click.option("--broker", default=None, help="Opt out from a single broker.")
-def optout(dry_run, headed, broker):
+@click.option(
+    "--yes",
+    "--auto-confirm",
+    "auto_confirm",
+    is_flag=True,
+    help="Skip the per-listing confirmation prompt and file every opt-out.",
+)
+def optout(dry_run, headed, broker, auto_confirm):
     """File opt-out requests for found listings."""
     profile = _load_profile()
     db = StateDB()
@@ -176,7 +183,14 @@ def optout(dry_run, headed, broker):
     if dry_run:
         click.echo("DRY RUN - nothing will actually be sent.\n")
 
-    outcomes = file_optouts(profile, db, dry_run=dry_run, headed=headed, broker_name=broker)
+    outcomes = file_optouts(
+        profile,
+        db,
+        dry_run=dry_run,
+        headed=headed,
+        broker_name=broker,
+        auto_confirm=auto_confirm,
+    )
 
     if not outcomes:
         click.echo("No listings to opt out from. Run 'privacyworm scan' first.")
