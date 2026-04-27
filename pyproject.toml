@@ -28,6 +28,7 @@ dependencies = [
     "playwright>=1.40",
     "cryptography>=41.0",
     "tldextract>=5.0",
+    "requests>=2.31",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +36,9 @@ dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
     "beautifulsoup4>=4.12",
+]
+mugshot = [
+    "reportlab>=4.0",
 ]
 
 [project.scripts]
