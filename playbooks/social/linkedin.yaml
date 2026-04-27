@@ -1,0 +1,14 @@
+platform: linkedin
+display_name: LinkedIn
+homepage: https://www.linkedin.com
+api_method: "Manual only - LinkedIn requires password and reason confirmation"
+manual_url: https://www.linkedin.com/mypreferences/d/close-account
+estimated_days_to_complete: 30
+instructions:
+  - "Download your data first: 'Settings and Privacy' then 'Data privacy' then 'Get a copy of your data'."
+  - "Visit https://www.linkedin.com/mypreferences/d/close-account"
+  - "Pick a reason for closing the account."
+  - "Re-enter your password."
+  - "Click 'Close account'."
+  - "LinkedIn deactivates the account immediately. After 14 days the data is queued for deletion. Within 30 days the profile is fully removed from indexes and search."
+notes: "Endorsements and recommendations you wrote on other people's profiles stay attributed to 'LinkedIn Member' instead of being deleted."

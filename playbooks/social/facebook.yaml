@@ -1,0 +1,14 @@
+platform: facebook
+display_name: Facebook
+homepage: https://www.facebook.com
+api_method: "Manual only - Meta requires interactive confirmation and a TFA challenge"
+manual_url: https://www.facebook.com/help/delete_account
+estimated_days_to_complete: 90
+instructions:
+  - "Download a copy of your data first: Settings then 'Your information' then 'Download profile information'. The export takes a few hours; wait for the email."
+  - "Visit https://www.facebook.com/help/delete_account"
+  - "Click 'Delete account'."
+  - "Re-enter your password and complete any TFA challenge."
+  - "Confirm deletion. Facebook keeps the account in a 30-day grace period; logging back in cancels the deletion."
+  - "After 30 days, deletion begins. Full removal from backups takes up to 90 days."
+notes: "Group posts and messages you sent are not deleted by closing your account; ask the recipient or admin to remove them."

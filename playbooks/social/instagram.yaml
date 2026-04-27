@@ -1,0 +1,15 @@
+platform: instagram
+display_name: Instagram
+homepage: https://www.instagram.com
+api_method: "Manual only - Meta requires interactive confirmation"
+manual_url: https://www.instagram.com/accounts/remove/request/permanent/
+estimated_days_to_complete: 90
+instructions:
+  - "Request a copy of your data first: Settings then 'Privacy and security' then 'Data download'."
+  - "Visit https://www.instagram.com/accounts/remove/request/permanent/"
+  - "Pick a reason from the dropdown."
+  - "Re-enter your password."
+  - "Click 'Delete @your-username'."
+  - "Instagram waits 30 days before starting deletion. Logging back in during the grace period cancels it."
+  - "Full removal from backups takes up to 90 days."
+notes: "Direct messages you sent stay visible to the recipient. To remove them, unsend each message before deleting the account."

@@ -1,0 +1,13 @@
+platform: twitter
+display_name: Twitter / X
+homepage: https://x.com
+api_method: "Manual only - Twitter/X requires password and TFA confirmation"
+manual_url: https://x.com/settings/deactivate
+estimated_days_to_complete: 30
+instructions:
+  - "Wipe your tweets first: privacyworm social delete --platform twitter --older-than 0d"
+  - "Sign in to x.com on a desktop browser."
+  - "Click 'More' then 'Settings and privacy' then 'Your account' then 'Deactivate your account'."
+  - "Read the warning, click 'Deactivate', and re-enter your password."
+  - "Do not log in for 30 days. If you log in within that window, the account is restored."
+notes: "Twitter/X deactivation is a 30-day cooling-off period. After 30 days the account is permanently deleted, but cached tweets may persist in third-party archives."

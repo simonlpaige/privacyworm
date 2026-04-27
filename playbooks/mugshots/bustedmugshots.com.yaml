@@ -1,0 +1,43 @@
+broker: bustedmugshots.com
+display_name: Busted Mugshots
+homepage: https://bustedmugshots.com
+last_updated: "2026-04-27"
+maintainer: "@community"
+
+search:
+  url_template: "https://bustedmugshots.com/search?q={first}+{last}"
+  method: browser
+  listing_selectors:
+    - "div.profile-card"
+    - "article.mugshot"
+  match_fields:
+    - first_name
+    - last_name
+    - state
+
+opt_out:
+  method: email
+  email_address: support@bustedmugshots.com
+  email_subject: "Removal request - $first $last"
+  email_body_template: |
+    Hello,
+
+    I am requesting removal of all listings on bustedmugshots.com that
+    refer to me.
+
+    Name: $full_name
+    Listing URL: $listing_url
+    Email for confirmation: $email
+
+    I am exercising my right to delete personal information under the
+    California Consumer Privacy Act (Cal. Civ. Code 1798.105) and any
+    equivalent state law that applies. Please confirm removal in
+    writing within 45 days.
+
+    Thank you.
+  requires_confirmation: true
+  confirmation_type: manual_ack
+  confirmation_subject_contains: "Busted Mugshots"
+
+rescan_days: 60
+legal_basis: "CCPA right-to-delete (Cal. Civ. Code 1798.105)"

@@ -1,0 +1,32 @@
+broker: arrestfacts.com
+display_name: ArrestFacts
+homepage: https://arrestfacts.com
+last_updated: "2026-04-27"
+maintainer: "@community"
+
+search:
+  url_template: "https://arrestfacts.com/search?fname={first}&lname={last}&state={state}"
+  method: browser
+  listing_selectors:
+    - "div.search-result"
+    - "li.person"
+  match_fields:
+    - first_name
+    - last_name
+    - state
+
+opt_out:
+  method: web_form
+  url: "https://arrestfacts.com/optout"
+  form:
+    email_field: "input[name='email']"
+    name_field: "input[name='name']"
+    url_field: "input[name='profile_url']"
+    submit_button: "button[type='submit']"
+  requires_confirmation: true
+  confirmation_type: email_link
+  confirmation_subject_contains: "ArrestFacts"
+  confirmation_link_text: "Confirm Removal"
+
+rescan_days: 60
+legal_basis: "CCPA right-to-delete (Cal. Civ. Code 1798.105); voluntary opt-out otherwise"

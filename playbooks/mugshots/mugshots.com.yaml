@@ -1,0 +1,39 @@
+broker: mugshots.com
+display_name: Mugshots.com
+homepage: https://mugshots.com
+last_updated: "2026-04-27"
+maintainer: "@community"
+
+search:
+  url_template: "https://mugshots.com/search.html?q={first}+{last}"
+  method: browser
+  listing_selectors:
+    - "div.detail"
+    - "article.entry"
+  match_fields:
+    - first_name
+    - last_name
+    - state
+    - city
+
+opt_out:
+  method: manual
+  manual_instructions: |
+    Mugshots.com does not offer a self-service opt-out form. They link
+    to a third-party "removal" service that demands a per-record fee,
+    which is widely viewed as extortion-adjacent.
+
+    Recommended path:
+      1. Generate a CCPA letter:
+           privacyworm mugshot letters --site mugshots.com --law ccpa
+         or a GDPR letter if you have an EU connection.
+      2. Send the PDF to abuse@mugshots.com AND to the operator's
+         registered agent. WHOIS records change; check current contact.
+      3. If that fails, file a complaint with the California AG
+         (oag.ca.gov/contact/consumer-complaint-against-business)
+         and your state AG.
+  requires_confirmation: false
+  confirmation_type: manual_ack
+
+rescan_days: 60
+legal_basis: "CCPA right-to-delete (Cal. Civ. Code 1798.105) where applicable; GDPR Art. 17 for EU residents"

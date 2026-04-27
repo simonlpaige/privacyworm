@@ -1,0 +1,14 @@
+platform: mastodon
+display_name: Mastodon
+homepage: https://joinmastodon.org
+api_method: "Manual - process is per-instance because Mastodon is federated"
+manual_url: https://docs.joinmastodon.org/user/moving/#delete
+estimated_days_to_complete: 30
+instructions:
+  - "Sign in to your home instance (for example mastodon.social)."
+  - "Open 'Preferences' then 'Account' then 'Account deletion' (the URL is /settings/delete)."
+  - "Re-enter your password."
+  - "Click 'Delete account'."
+  - "Your home instance broadcasts a Delete activity to every other instance that has ever seen your posts."
+  - "Most well-run instances honour the Delete within minutes. Some never do, which is the cost of federation. There is no central authority to appeal to."
+notes: "Before deleting, consider migrating to a new instance instead. From the same Account preferences page you can move followers automatically. This preserves your social graph while leaving the old account empty."

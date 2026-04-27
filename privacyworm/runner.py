@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import tldextract
 
@@ -66,18 +67,24 @@ def scan_all(
     db: StateDB,
     headed: bool = False,
     broker_name: str | None = None,
+    playbooks_dir: Path | None = None,
 ) -> dict[str, list[dict]]:
-    """Scan all brokers (or one specific broker) and return results."""
+    """Scan all brokers (or one specific broker) and return results.
+
+    ``playbooks_dir`` lets callers point at a different folder of YAML
+    playbooks (for example ``playbooks/mugshots/``) instead of the
+    default broker collection.
+    """
     results: dict[str, list[dict]] = {}
 
     if broker_name:
-        playbook = get_playbook(broker_name)
+        playbook = get_playbook(broker_name, directory=playbooks_dir)
         if not playbook:
             logger.error(f"No playbook found for broker: {broker_name}")
             return results
         results[broker_name] = scan_broker(playbook, profile, db, headed)
     else:
-        for playbook in load_all_playbooks():
+        for playbook in load_all_playbooks(directory=playbooks_dir):
             try:
                 results[playbook.broker] = scan_broker(playbook, profile, db, headed)
             except Exception as e:
@@ -117,18 +124,30 @@ def file_optouts(
     dry_run: bool = False,
     headed: bool = False,
     broker_name: str | None = None,
+    playbooks_dir: Path | None = None,
     auto_confirm: bool = False,
 ) -> list[dict]:
     """File opt-out requests for all found listings.
 
+    When ``playbooks_dir`` is given without ``broker_name``, only listings
+    for brokers that actually live in that directory are processed. That
+    lets ``privacyworm mugshot optout`` skip data-broker listings and vice
+    versa.
+
     Unless ``auto_confirm`` is True, each listing is shown to the user and
     they must type ``y`` / ``yes`` before the request is filed.
     """
-    listings = db.get_listings(broker=broker_name, status="found")
+    if broker_name:
+        listings = db.get_listings(broker=broker_name, status="found")
+    elif playbooks_dir is not None:
+        known = {pb.broker for pb in load_all_playbooks(directory=playbooks_dir)}
+        listings = [r for r in db.get_listings(status="found") if r["broker"] in known]
+    else:
+        listings = db.get_listings(status="found")
     outcomes = []
 
     for listing_row in listings:
-        playbook = get_playbook(listing_row["broker"])
+        playbook = get_playbook(listing_row["broker"], directory=playbooks_dir)
         if not playbook:
             logger.warning(f"No playbook for broker {listing_row['broker']}, skipping")
             continue

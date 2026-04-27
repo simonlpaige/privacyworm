@@ -165,8 +165,59 @@ legal_basis: "CCPA if CA resident; otherwise Spokeo voluntary opt-out"
 - GUI / web UI
 - Browser extension
 - Non-US brokers (save for v2)
-- Social media scraping (LinkedIn, old Reddit) — save for v2
 - Automated captcha solving (surface captcha to user, pause, resume)
+
+## v1.1 Additions (social + mugshots)
+
+### Social media comment / post removal
+
+```bash
+privacyworm social scan                                    # count old comments and posts
+privacyworm social delete    --platform reddit  --older-than 1y
+privacyworm social delete    --platform twitter --before 2024-01-01
+privacyworm social overwrite --platform reddit  --older-than 6m
+privacyworm social delete-account --platform reddit
+```
+
+- Reddit and Twitter/X talk to the official APIs over OAuth 2.0 with
+  PKCE. No client secret required - the user registers a public app
+  and exports its client ID via `PRIVACYWORM_REDDIT_CLIENT_ID` /
+  `PRIVACYWORM_TWITTER_CLIENT_ID`.
+- Tokens are stored encrypted at `~/.privacyworm/social_tokens.yaml.enc`
+  using the same Fernet + PBKDF2 scheme as `profile.yaml.enc`.
+- Other platforms (Facebook, Instagram, TikTok, LinkedIn, Pinterest,
+  Tumblr, Mastodon) are flagged manual-only with a step-by-step
+  walkthrough.
+- `delete-account` prints the playbook for any platform: API method,
+  manual URL, ordered instructions, estimated days to completion.
+  Playbooks live at `playbooks/social/<platform>.yaml`.
+
+### Mugshot site removal
+
+```bash
+privacyworm mugshot scan
+privacyworm mugshot optout  --dry-run
+privacyworm mugshot letters --site mugshots.com --law ccpa
+privacyworm mugshot letters --site mugshots.com --law gdpr
+```
+
+- Sites are described by the same broker playbook schema, but they
+  live in `playbooks/mugshots/<site>.yaml` so they do not pollute
+  the data-broker namespace.
+- v1.1 ships ten of them: mugshots.com, bustedmugshots.com,
+  arrestfacts.com, justmugshots.com, jailbase.com, arrests.org,
+  instantcheckmate.com, publicrecords.directory, arrests.com,
+  mugshotsandmore.com.
+- `letters` writes a one-page PDF (reportlab) citing GDPR Art. 17 or
+  the CCPA right-to-delete (Cal. Civ. Code 1798.105). Plain language,
+  no scary legalese.
+
+### New dependencies
+
+- `requests>=2.31` is a core dep for the social-platform HTTP API calls.
+- `reportlab>=4.0` is an optional extra (`pip install 'privacyworm[mugshot]'`)
+  used only by `privacyworm mugshot letters`. Scan, optout, social, etc
+  all work without it.
 
 ## What "done" looks like for v1
 - `privacyworm init` -> `privacyworm scan` -> `privacyworm optout --dry-run` -> `privacyworm optout` works end-to-end against Spokeo with a real test profile.

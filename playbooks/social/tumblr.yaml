@@ -1,0 +1,13 @@
+platform: tumblr
+display_name: Tumblr
+homepage: https://www.tumblr.com
+api_method: "Manual only - Tumblr requires interactive password confirmation"
+manual_url: https://www.tumblr.com/account/delete
+estimated_days_to_complete: 14
+instructions:
+  - "Sign in to tumblr.com on a desktop browser."
+  - "Visit https://www.tumblr.com/account/delete"
+  - "Re-enter your email and password."
+  - "Click 'Delete everything'."
+  - "All your blogs and posts are removed. The username is held for a short cooldown before becoming available again."
+notes: "Reblogs of your posts on other people's blogs continue to display the reblog chain text but link back to a deleted source. Reach out to those bloggers individually if you want the chains scrubbed."

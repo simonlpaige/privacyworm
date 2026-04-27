@@ -1,0 +1,16 @@
+platform: tiktok
+display_name: TikTok
+homepage: https://www.tiktok.com
+api_method: "Manual only - TikTok requires SMS or email code confirmation"
+manual_url: https://www.tiktok.com/setting/account/delete
+estimated_days_to_complete: 60
+instructions:
+  - "Open the TikTok app or sign in to tiktok.com."
+  - "Go to 'Profile' then the menu icon then 'Settings and privacy'."
+  - "Tap 'Manage account' then 'Delete account'."
+  - "Pick a reason and tap 'Continue'."
+  - "Verify with the code TikTok sends to your phone or email."
+  - "Tap 'Delete account'."
+  - "TikTok holds the account for 30 days; logging back in during the grace window cancels deletion."
+  - "After 30 days, deletion begins. Backup copies are purged within another 30 days."
+notes: "Videos you posted to other people's duets, stitches, or reposts may persist on those creators' accounts. Ask them directly for removal if needed."

@@ -1,0 +1,15 @@
+platform: pinterest
+display_name: Pinterest
+homepage: https://www.pinterest.com
+api_method: "Manual only - Pinterest sends an email confirmation step"
+manual_url: https://www.pinterest.com/settings/account-management/
+estimated_days_to_complete: 30
+instructions:
+  - "Sign in to pinterest.com."
+  - "Click your profile icon, then the three dots, then 'Settings'."
+  - "Pick 'Account management'."
+  - "Scroll to 'Delete account' and click 'Delete account'."
+  - "Pinterest emails a confirmation link to your address on file."
+  - "Click the link in the email within 14 days to finalise deletion."
+  - "After confirmation, full deletion from search indexes typically completes within 14 days."
+notes: "Pins you saved to other people's group boards stay on those boards as long as the original Pin source URL is reachable."

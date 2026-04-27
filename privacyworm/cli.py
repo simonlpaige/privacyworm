@@ -8,7 +8,9 @@ import click
 import yaml
 
 from privacyworm import __version__
+from privacyworm.cli_helpers import load_profile as _load_profile
 from privacyworm.config import get_config_dir, get_profile_path
+from privacyworm.mugshot.cli import mugshot as _mugshot_group
 from privacyworm.profile import (
     Address,
     InboxConfig,
@@ -18,6 +20,7 @@ from privacyworm.profile import (
     encrypt_profile,
 )
 from privacyworm.runner import check_inbox, file_optouts, scan_all
+from privacyworm.social.cli import social as _social_group
 from privacyworm.state import StateDB
 
 logging.basicConfig(
@@ -26,20 +29,6 @@ logging.basicConfig(
     stream=sys.stderr,
 )
 logger = logging.getLogger("privacyworm")
-
-
-def _load_profile() -> Profile:
-    """Prompt for passphrase and decrypt the profile."""
-    path = get_profile_path(encrypted=True)
-    if not path.exists():
-        click.echo("No profile found. Run 'privacyworm init' first.")
-        raise SystemExit(1)
-    passphrase = getpass.getpass("Passphrase: ")
-    try:
-        return decrypt_profile(passphrase, path)
-    except Exception:
-        click.echo("Wrong passphrase or corrupted profile.")
-        raise SystemExit(1)
 
 
 @click.group()
@@ -282,6 +271,10 @@ def check():
             click.echo(f"  Confirmed: {p['broker']} (optout #{p['optout_id']})")
 
     db.close()
+
+
+cli.add_command(_social_group)
+cli.add_command(_mugshot_group)
 
 
 if __name__ == "__main__":

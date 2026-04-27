@@ -1,0 +1,15 @@
+platform: reddit
+display_name: Reddit
+homepage: https://www.reddit.com
+api_method: "Manual only - Reddit requires interactive password confirmation"
+manual_url: https://www.reddit.com/prefs/deactivate
+estimated_days_to_complete: 90
+instructions:
+  - "Before deactivating, wipe your content first. Run: privacyworm social overwrite --platform reddit --older-than 0d --text '.'"
+  - "Then run: privacyworm social delete --platform reddit --older-than 0d"
+  - "Sign in to Reddit on a desktop browser."
+  - "Visit https://www.reddit.com/prefs/deactivate"
+  - "Enter your username and password to confirm."
+  - "Tick the 'I understand' box."
+  - "Click 'Deactivate Account'."
+notes: "Deactivation is not the same as deletion. Reddit retains some account data for up to 90 days, and your old content (now attributed to '[deleted]') stays unless you wipe it first."
