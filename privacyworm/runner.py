@@ -12,7 +12,7 @@ from privacyworm.brokers.email import EmailBroker
 from privacyworm.brokers.web_form import WebFormBroker
 from privacyworm.inbox.imap import ImapInbox
 from privacyworm.matching import score_listing
-from privacyworm.playbook import Playbook, load_all_playbooks, get_playbook
+from privacyworm.playbook import Playbook, get_playbook, load_all_playbooks
 from privacyworm.profile import Profile
 from privacyworm.state import StateDB
 
@@ -459,7 +459,10 @@ def check_inbox(
         listing = []
         for s in ("optout_submitted", "opt_out_filed", "confirmation_needed"):
             listing.extend(db.get_listings(status=s))
-        matching_listing = next((l for l in listing if l["id"] == optout["listing_id"]), None)
+        matching_listing = next(
+            (row for row in listing if row["id"] == optout["listing_id"]),
+            None,
+        )
         if not matching_listing:
             continue
 

@@ -5,7 +5,7 @@ from typing import Optional, Union
 
 import tldextract
 import yaml
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 PLAYBOOKS_DIR = Path(__file__).parent.parent / "playbooks"
 
@@ -134,6 +134,11 @@ def _registered_domain(url: str) -> str:
 
 
 class Playbook(BaseModel):
+    # Reject unknown top-level fields. A malicious PR cannot sneak in
+    # a new key that the loader silently ignores; if you want a new
+    # field, you have to add it to the model.
+    model_config = ConfigDict(extra="forbid")
+
     broker: str
     display_name: str
     homepage: str

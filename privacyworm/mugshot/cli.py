@@ -129,11 +129,11 @@ def letters(site, law, out):
     out_path = Path(out) if out else Path.cwd() / f"{site}-{law}-letter.pdf"
     try:
         from privacyworm.mugshot.letters import render_letter
-    except ImportError:
+    except ImportError as exc:
         click.echo(
             "PDF generation needs reportlab. Install the extra:\n"
             "  pip install 'privacyworm[mugshot]'"
         )
-        raise SystemExit(1)
+        raise SystemExit(1) from exc
     render_letter(profile, pb, law, out_path)
     click.echo(f"Wrote {out_path}")

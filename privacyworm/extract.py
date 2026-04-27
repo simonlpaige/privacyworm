@@ -25,9 +25,9 @@ from typing import Any
 from privacyworm.playbook import ExtractField
 
 try:
-    from bs4 import BeautifulSoup
+    from bs4 import BeautifulSoup as _BeautifulSoup
 except ImportError:  # pragma: no cover - only hit when bs4 isn't installed
-    BeautifulSoup = None  # type: ignore[assignment]
+    _BeautifulSoup = None  # type: ignore[assignment,misc]
 
 
 _SELECTOR_SUFFIX = re.compile(r"::(text|attr\(([^)]+)\))$")
@@ -91,14 +91,14 @@ def extract_listings_from_html(
     extract_spec: dict[str, Any],
 ) -> list[dict[str, Any]]:
     """Walk every listing card in ``html`` and pull fields per the spec."""
-    if BeautifulSoup is None:
+    if _BeautifulSoup is None:
         raise RuntimeError(
             "beautifulsoup4 is required for playbook extract/test. "
             "Install with: pip install beautifulsoup4"
         )
 
-    soup = BeautifulSoup(html, "html.parser")
-    nodes = []
+    soup = _BeautifulSoup(html, "html.parser")
+    nodes: list[Any] = []
     for sel in listing_selectors:
         nodes.extend(soup.select(sel))
 

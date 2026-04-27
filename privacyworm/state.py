@@ -227,13 +227,15 @@ class StateDB:
         select_match_score = "match_score" if "match_score" in existing_cols else "NULL"
         select_matched_fields = "matched_fields" if "matched_fields" in existing_cols else "NULL"
 
+        # The three interpolated values come from a fixed set of column
+        # names or the literal "NULL"; no user input can reach this query.
         self.conn.execute(f"""
             INSERT INTO listings_new
                 (id, broker, listing_url, found_at, status, confidence, match_score, matched_fields)
             SELECT id, broker, listing_url, found_at, status,
                    {select_confidence}, {select_match_score}, {select_matched_fields}
             FROM listings
-        """)
+        """)  # nosec B608
         self.conn.execute("DROP TABLE listings")
         self.conn.execute("ALTER TABLE listings_new RENAME TO listings")
         self.conn.commit()

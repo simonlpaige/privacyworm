@@ -1,6 +1,14 @@
-"""Email-based broker opt-outs via SMTP."""
+"""Email-based broker opt-outs via SMTP.
+
+For email-based opt-outs, we use the user's first configured email as
+the sender/reply-to. The SMTP server details come from environment
+variables PRIVACYWORM_SMTP_HOST, PRIVACYWORM_SMTP_PORT,
+PRIVACYWORM_SMTP_USER, PRIVACYWORM_SMTP_PASS. If they aren't set,
+dry-run still works; live sends will fail loudly.
+"""
 
 import logging
+import os
 import smtplib
 from email.mime.text import MIMEText
 from string import Template
@@ -10,13 +18,6 @@ from privacyworm.playbook import Playbook, resolve_legal_basis
 from privacyworm.profile import Profile
 
 logger = logging.getLogger("privacyworm")
-
-# Assumption: for email-based opt-outs, we use the user's first configured email
-# as the sender/reply-to. The SMTP server details come from environment variables
-# PRIVACYWORM_SMTP_HOST, PRIVACYWORM_SMTP_PORT, PRIVACYWORM_SMTP_USER,
-# PRIVACYWORM_SMTP_PASS. If not set, dry-run still works but live sends will fail.
-
-import os
 
 SMTP_HOST = os.environ.get("PRIVACYWORM_SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.environ.get("PRIVACYWORM_SMTP_PORT", "587"))

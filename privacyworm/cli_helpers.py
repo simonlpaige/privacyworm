@@ -23,6 +23,6 @@ def load_profile(passphrase: str | None = None) -> Profile:
         passphrase = getpass.getpass("Passphrase: ")
     try:
         return decrypt_profile(passphrase, path)
-    except Exception:
+    except Exception as exc:
         click.echo("Wrong passphrase or corrupted profile.")
-        raise SystemExit(1)
+        raise SystemExit(1) from exc

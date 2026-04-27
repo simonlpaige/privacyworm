@@ -36,11 +36,60 @@ dependencies = [
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
+    "pytest-cov>=4.1",
     "beautifulsoup4>=4.12",
+    "ruff>=0.6",
+    "mypy>=1.8",
+    "types-PyYAML>=6.0",
+    "types-requests>=2.31",
+    "bandit>=1.7",
+    "pip-audit>=2.7",
 ]
 mugshot = [
     "reportlab>=4.0",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# A pragmatic starter set: keep CI green without becoming a style
+# nag-fest. Picks up real bugs (F), simple style (E, W), import
+# hygiene (I), and dead-code finds (B).
+select = ["E", "F", "W", "I", "B"]
+ignore = [
+    "E501",  # line length is enforced by formatter, not the linter
+    "B008",  # default value as function call (Click decorators)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests genuinely care about "did this raise anything?" for schema
+# validation, and using a one-letter loop variable for a row dict is
+# fine in test scaffolding.
+"tests/**" = ["B017", "B011", "E741", "I001", "F401"]
+# smoke_test.py is a hand-run shell-style script; its import order
+# and lazy unused-import shape come from the demo flow it walks.
+"smoke_test.py" = ["E402", "I001", "F401", "F541"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+no_implicit_optional = true
+# We don't run --strict yet. The goal at this stage is to catch bugs
+# in new code, not retrofit annotations across the whole package.
+follow_imports = "silent"
+
+[[tool.mypy.overrides]]
+# Pre-existing third-party-shaped modules that lean on duck typing.
+# Cleaning them up is a separate piece of work.
+module = ["privacyworm.social.oauth", "privacyworm.inbox.imap"]
+ignore_errors = true
+
+[tool.bandit]
+# Tests use random data and assert; that is fine.
+skips = ["B101"]
+exclude_dirs = ["tests"]
 
 [project.scripts]
 privacyworm = "privacyworm.cli:cli"

@@ -12,7 +12,6 @@ from typing import Optional
 
 from privacyworm.profile import Profile
 
-
 HIGH_THRESHOLD = 70
 MEDIUM_THRESHOLD = 45
 

@@ -55,11 +55,11 @@ def _resolve_cutoff(older_than: str | None, before: str | None) -> datetime:
         try:
             return datetime.now(timezone.utc) - parse_period(older_than)
         except ValueError as e:
-            raise click.BadParameter(str(e), param_hint="--older-than")
+            raise click.BadParameter(str(e), param_hint="--older-than") from e
     try:
         return parse_iso_date(before)  # type: ignore[arg-type]
-    except ValueError:
-        raise click.BadParameter("Use YYYY-MM-DD format.", param_hint="--before")
+    except ValueError as exc:
+        raise click.BadParameter("Use YYYY-MM-DD format.", param_hint="--before") from exc
 
 
 @click.group(name="social")

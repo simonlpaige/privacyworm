@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 
 import click
-import yaml
 
 from privacyworm import __version__
 from privacyworm.cli_helpers import load_profile as _load_profile
@@ -21,17 +20,16 @@ from privacyworm.config import (
     is_state_encryption_enabled,
     unencrypted_warning_marker,
 )
+from privacyworm.extract import extract_listings_from_html
 from privacyworm.mugshot.cli import mugshot as _mugshot_group
+from privacyworm.playbook import load_all_playbooks
 from privacyworm.profile import (
     Address,
     InboxConfig,
     Name,
     Profile,
-    decrypt_profile,
     encrypt_profile,
 )
-from privacyworm.extract import extract_listings_from_html
-from privacyworm.playbook import load_all_playbooks
 from privacyworm.runner import check_inbox, file_optouts, review_listings, scan_all
 from privacyworm.social.cli import social as _social_group
 from privacyworm.state import StateDB
@@ -369,12 +367,12 @@ def status():
     # Show per-broker breakdown
     listings = db.get_listings()
     brokers = {}
-    for l in listings:
-        b = l["broker"]
+    for row in listings:
+        b = row["broker"]
         brokers.setdefault(b, {"found": 0, "opted_out": 0})
-        if l["status"] == "found":
+        if row["status"] == "found":
             brokers[b]["found"] += 1
-        elif l["status"] in ("opt_out_filed", "opt_out_confirmed"):
+        elif row["status"] in ("opt_out_filed", "opt_out_confirmed", "optout_submitted"):
             brokers[b]["opted_out"] += 1
 
     if brokers:
