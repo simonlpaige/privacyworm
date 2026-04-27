@@ -22,14 +22,15 @@ def test_add_and_get_listing(db: StateDB):
     lid = db.add_listing(
         broker="spokeo",
         listing_url="https://spokeo.com/Simon-Paige/123",
-        matched_name="Simon Paige",
-        matched_city="Kansas City",
-        matched_state="MO",
+        confidence="medium",
+        match_score=52,
+        matched_fields=["full_name", "state"],
     )
     assert lid == 1
     listings = db.get_listings(broker="spokeo")
     assert len(listings) == 1
-    assert listings[0]["matched_name"] == "Simon Paige"
+    assert listings[0]["confidence"] == "medium"
+    assert listings[0]["match_score"] == 52
     assert listings[0]["status"] == "found"
 
 

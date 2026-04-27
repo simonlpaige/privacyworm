@@ -67,12 +67,12 @@ db = StateDB()
 listing_id = db.add_listing(
     broker="spokeo",
     listing_url="https://www.spokeo.com/Jane-Doe/Missouri/p1234567",
-    matched_name="Jane Q Doe",
-    matched_city="Kansas City",
-    matched_state="MO",
+    confidence="high",
+    match_score=85,
+    matched_fields=["full_name", "city", "state"],
 )
 print(f"   Injected fake listing #{listing_id}")
-outcomes = file_optouts(loaded, db, dry_run=True, headed=False, broker_name="spokeo")
+outcomes = file_optouts(loaded, db, dry_run=True, headed=False, broker_name="spokeo", auto_confirm=True)
 print(f"   Dry-run outcomes: {len(outcomes)}")
 for o in outcomes:
     status = "OK" if o["success"] else "FAILED"

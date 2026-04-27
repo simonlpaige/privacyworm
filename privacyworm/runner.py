@@ -1,5 +1,6 @@
 """Orchestrator: scan -> match -> opt-out -> log."""
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -10,9 +11,12 @@ from privacyworm.brokers.base import BaseBroker
 from privacyworm.brokers.email import EmailBroker
 from privacyworm.brokers.web_form import WebFormBroker
 from privacyworm.inbox.imap import ImapInbox
+from privacyworm.matching import score_listing
 from privacyworm.playbook import Playbook, load_all_playbooks, get_playbook
 from privacyworm.profile import Profile
 from privacyworm.state import StateDB
+
+ALL_MATCHABLE_FIELDS = ["full_name", "city", "state", "zip", "phone", "relative", "age"]
 
 logger = logging.getLogger("privacyworm")
 
@@ -41,18 +45,30 @@ def scan_broker(
     db: StateDB,
     headed: bool = False,
 ) -> list[dict]:
-    """Scan a single broker and store any new listings found."""
+    """Scan a single broker, score each listing, and store the verdicts."""
     broker = _make_broker(playbook, profile, headed)
     listings = broker.scan()
 
     for listing in listings:
+        text_for_scoring = " ".join(
+            str(v) for v in (
+                listing.get("matched_name"),
+                listing.get("matched_city"),
+                listing.get("matched_state"),
+                listing.get("raw_snippet"),
+            ) if v
+        )
+        verdict = score_listing(text_for_scoring, profile)
+        listing["confidence"] = verdict["confidence"]
+        listing["match_score"] = verdict["score"]
+        listing["matched_fields"] = verdict["matched_fields"]
+
         db.add_listing(
             broker=playbook.broker,
             listing_url=listing.get("listing_url"),
-            matched_name=listing.get("matched_name"),
-            matched_city=listing.get("matched_city"),
-            matched_state=listing.get("matched_state"),
-            raw_snippet=listing.get("raw_snippet"),
+            confidence=verdict["confidence"],
+            match_score=verdict["score"],
+            matched_fields=verdict["matched_fields"],
         )
 
     # Update rescan schedule
@@ -94,25 +110,40 @@ def scan_all(
     return results
 
 
-def _confirm_listing(listing_row: dict) -> bool:
-    """Show the listing to the user and ask whether to file an opt-out.
+def _confirm_listing(listing_row: dict, profile: Profile) -> bool:
+    """Show the score and matched fields, then ask whether to file an opt-out.
 
     Returns True when the user types y/yes (case-insensitive), else False.
     """
-    print()
-    print(f"  Broker:   {listing_row['broker']}")
-    if listing_row.get("matched_name"):
-        print(f"  Name:     {listing_row['matched_name']}")
-    location_parts = [p for p in (listing_row.get("matched_city"), listing_row.get("matched_state")) if p]
-    if location_parts:
-        print(f"  Location: {', '.join(location_parts)}")
-    if listing_row.get("listing_url"):
-        print(f"  URL:      {listing_row['listing_url']}")
-    snippet = listing_row.get("raw_snippet")
-    if snippet:
-        print(f"  Snippet:  {snippet}")
+    matched_fields_raw = listing_row.get("matched_fields") or "[]"
     try:
-        answer = input("File opt-out for this listing? [y/N]: ").strip().lower()
+        matched_fields = json.loads(matched_fields_raw) if isinstance(matched_fields_raw, str) else list(matched_fields_raw)
+    except (json.JSONDecodeError, TypeError):
+        matched_fields = []
+    missing_fields = [f for f in ALL_MATCHABLE_FIELDS if f not in matched_fields]
+
+    score = listing_row.get("match_score")
+    confidence = listing_row.get("confidence") or "unknown"
+
+    name_str = f"{profile.name.first} {profile.name.last}".strip()
+    location = ""
+    if profile.addresses:
+        addr = profile.addresses[0]
+        location_parts = [p for p in (addr.city, addr.state) if p]
+        if location_parts:
+            location = ", " + " ".join(location_parts)
+
+    print()
+    score_label = f"{score}/100" if score is not None else "unknown"
+    print(f"  Broker:  {listing_row['broker']}")
+    print(f"  Match:   {name_str}{location} (score: {score_label} - {confidence} confidence)")
+    print(f"  Matched fields: {', '.join(matched_fields) if matched_fields else 'none'}")
+    print(f"  Missing: {', '.join(missing_fields) if missing_fields else 'none'}")
+    if listing_row.get("listing_url"):
+        print(f"  URL:     {listing_row['listing_url']}")
+
+    try:
+        answer = input("File opt-out? [y/N]: ").strip().lower()
     except EOFError:
         return False
     return answer in ("y", "yes")
@@ -136,6 +167,10 @@ def file_optouts(
 
     Unless ``auto_confirm`` is True, each listing is shown to the user and
     they must type ``y`` / ``yes`` before the request is filed.
+
+    ``auto_confirm`` only bypasses the prompt for high-confidence matches.
+    Low and medium confidence listings always go through the manual prompt
+    so we never blindly file off a name collision.
     """
     if broker_name:
         listings = db.get_listings(broker=broker_name, status="found")
@@ -152,7 +187,9 @@ def file_optouts(
             logger.warning(f"No playbook for broker {listing_row['broker']}, skipping")
             continue
 
-        if not auto_confirm and not _confirm_listing(listing_row):
+        confidence = listing_row.get("confidence") or "low"
+        needs_prompt = not auto_confirm or confidence != "high"
+        if needs_prompt and not _confirm_listing(listing_row, profile):
             outcomes.append({
                 "broker": listing_row["broker"],
                 "listing_id": listing_row["id"],

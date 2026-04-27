@@ -1,5 +1,13 @@
-"""SQLite-backed state: listings found, opt-outs filed, rescan schedule."""
+"""SQLite-backed state: listings found, opt-outs filed, rescan schedule.
 
+We store the listing URL but not the full scraped text. The broker name and
+listing URL are the minimum needed to file an opt-out and track status. The
+scoring columns (confidence, match_score, matched_fields) hold the verdict
+of the matching engine so we can show it back at confirm time without
+keeping raw scraped HTML around.
+"""
+
+import json
 import logging
 import sqlite3
 from datetime import datetime, timezone
@@ -15,12 +23,11 @@ CREATE TABLE IF NOT EXISTS listings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     broker TEXT NOT NULL,
     listing_url TEXT,
-    matched_name TEXT,
-    matched_city TEXT,
-    matched_state TEXT,
-    raw_snippet TEXT,
     found_at TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'found',
+    confidence TEXT,
+    match_score INTEGER,
+    matched_fields TEXT,
     UNIQUE (broker, listing_url)
 );
 
@@ -52,27 +59,44 @@ class StateDB:
         self.conn = sqlite3.connect(str(self.db_path))
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
-        self._migrate_listings_unique_constraint()
+        self._migrate_listings_schema()
 
-    def _migrate_listings_unique_constraint(self) -> None:
-        """Add UNIQUE(broker, listing_url) to an existing listings table if missing.
+    def _migrate_listings_schema(self) -> None:
+        """Bring the listings table to the current shape.
 
-        SQLite does not support ALTER TABLE ADD CONSTRAINT, so the migration creates
-        a replacement table, copies deduplicated rows with their original IDs
-        (preserving optouts foreign-key references), drops the old table, and
-        renames the new one. Rows with the same (broker, listing_url) keep only
-        the most recently inserted one (highest id).
+        Three migrations roll up into one rebuild so older databases land in
+        the same place as a fresh install:
 
-        On a fresh database the SCHEMA above already includes the constraint, so
-        this function detects that and returns immediately.
+        - Add UNIQUE(broker, listing_url) where it is missing.
+        - Drop the PII columns (matched_name, matched_city, matched_state,
+          raw_snippet) from databases that still have them. We never need
+          scraped text after the listing has been scored, and keeping it on
+          disk is a privacy footgun.
+        - Add the scoring columns (confidence, match_score, matched_fields)
+          where they don't exist yet.
+
+        On a fresh database the SCHEMA above already matches, so this exits
+        early without touching anything.
         """
         row = self.conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='listings'"
         ).fetchone()
-        if row is None or "UNIQUE" in (row[0] or ""):
-            return  # fresh DB or already migrated
+        if row is None:
+            return
 
-        logger.info("Migrating listings table: adding UNIQUE(broker, listing_url)")
+        cols_info = self.conn.execute("PRAGMA table_info(listings)").fetchall()
+        existing_cols = {c[1] for c in cols_info}
+        pii_cols = {"matched_name", "matched_city", "matched_state", "raw_snippet"}
+
+        has_pii = bool(pii_cols & existing_cols)
+        has_unique = "UNIQUE" in (row[0] or "")
+        new_cols = {"confidence", "match_score", "matched_fields"}
+        missing_new_cols = new_cols - existing_cols
+
+        if not has_pii and has_unique and not missing_new_cols:
+            return
+
+        logger.info("Migrating listings table: drop PII columns, add scoring columns, ensure UNIQUE")
 
         # Remove duplicate non-null listing_url rows, keeping the highest id per pair.
         self.conn.execute("""
@@ -85,22 +109,32 @@ class StateDB:
               )
         """)
 
-        # Rebuild with constraint; preserve original IDs so optouts FK still works.
+        self.conn.execute("DROP TABLE IF EXISTS listings_new")
         self.conn.execute("""
             CREATE TABLE listings_new (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 broker TEXT NOT NULL,
                 listing_url TEXT,
-                matched_name TEXT,
-                matched_city TEXT,
-                matched_state TEXT,
-                raw_snippet TEXT,
                 found_at TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'found',
+                confidence TEXT,
+                match_score INTEGER,
+                matched_fields TEXT,
                 UNIQUE (broker, listing_url)
             )
         """)
-        self.conn.execute("INSERT INTO listings_new SELECT * FROM listings")
+
+        select_confidence = "confidence" if "confidence" in existing_cols else "NULL"
+        select_match_score = "match_score" if "match_score" in existing_cols else "NULL"
+        select_matched_fields = "matched_fields" if "matched_fields" in existing_cols else "NULL"
+
+        self.conn.execute(f"""
+            INSERT INTO listings_new
+                (id, broker, listing_url, found_at, status, confidence, match_score, matched_fields)
+            SELECT id, broker, listing_url, found_at, status,
+                   {select_confidence}, {select_match_score}, {select_matched_fields}
+            FROM listings
+        """)
         self.conn.execute("DROP TABLE listings")
         self.conn.execute("ALTER TABLE listings_new RENAME TO listings")
         self.conn.commit()
@@ -117,16 +151,16 @@ class StateDB:
         self,
         broker: str,
         listing_url: str | None = None,
-        matched_name: str | None = None,
-        matched_city: str | None = None,
-        matched_state: str | None = None,
-        raw_snippet: str | None = None,
+        confidence: str | None = None,
+        match_score: int | None = None,
+        matched_fields: list[str] | None = None,
     ) -> int:
+        fields_json = json.dumps(matched_fields) if matched_fields is not None else None
         cur = self.conn.execute(
             "INSERT OR IGNORE INTO listings "
-            "(broker, listing_url, matched_name, matched_city, matched_state, raw_snippet, found_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (broker, listing_url, matched_name, matched_city, matched_state, raw_snippet, self._now()),
+            "(broker, listing_url, found_at, confidence, match_score, matched_fields) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (broker, listing_url, self._now(), confidence, match_score, fields_json),
         )
         self.conn.commit()
         return cur.lastrowid  # type: ignore[return-value]
