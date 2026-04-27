@@ -1,0 +1,35 @@
+broker: mugshotsandmore.com
+display_name: Mugshots and More
+homepage: https://mugshotsandmore.com
+last_updated: "2026-04-27"
+maintainer: "@community"
+
+search:
+  url_template: "https://mugshotsandmore.com/search?name={first}+{last}&state={state}"
+  method: browser
+  listing_selectors:
+    - "div.profile-result"
+    - "article.entry"
+  match_fields:
+    - first_name
+    - last_name
+    - state
+
+opt_out:
+  method: manual
+  manual_instructions: |
+    Mugshots and More has no public opt-out form and historically
+    requires either payment or a court order. Recommended path:
+
+      1. Generate a CCPA letter:
+           privacyworm mugshot letters --site mugshotsandmore.com
+      2. Mail or email it to the contact in the site footer or to
+         the registered agent in the WHOIS record.
+      3. If ignored, file a complaint with the California AG and your
+         state AG. If you live in the EU, also lodge a complaint with
+         your national data protection authority (Article 77 GDPR).
+  requires_confirmation: false
+  confirmation_type: manual_ack
+
+rescan_days: 60
+legal_basis: "CCPA right-to-delete; GDPR Art. 17 for EU residents"

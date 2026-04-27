@@ -1,0 +1,33 @@
+broker: jailbase.com
+display_name: JailBase
+homepage: https://www.jailbase.com
+last_updated: "2026-04-27"
+maintainer: "@community"
+
+search:
+  url_template: "https://www.jailbase.com/search/?last_name={last}&first_name={first}&state={state}"
+  method: browser
+  listing_selectors:
+    - "div.arrest-card"
+    - "li.search-result"
+  match_fields:
+    - first_name
+    - last_name
+    - state
+    - city
+
+opt_out:
+  method: web_form
+  url: "https://www.jailbase.com/about/optout/"
+  form:
+    email_field: "input[name='email']"
+    name_field: "input[name='full_name']"
+    url_field: "input[name='url']"
+    submit_button: "button[type='submit']"
+  requires_confirmation: true
+  confirmation_type: email_link
+  confirmation_subject_contains: "JailBase"
+  confirmation_link_text: "Confirm"
+
+rescan_days: 60
+legal_basis: "Voluntary opt-out program; CCPA where applicable"

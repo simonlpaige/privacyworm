@@ -1,0 +1,33 @@
+broker: instantcheckmate.com
+display_name: Instant Checkmate
+homepage: https://www.instantcheckmate.com
+last_updated: "2026-04-27"
+maintainer: "@community"
+
+search:
+  url_template: "https://www.instantcheckmate.com/results?fname={first}&lname={last}&state={state}"
+  method: browser
+  listing_selectors:
+    - "div.search-result"
+    - "li.result-card"
+  match_fields:
+    - first_name
+    - last_name
+    - state
+    - city
+
+opt_out:
+  method: web_form
+  url: "https://www.instantcheckmate.com/optout/"
+  form:
+    email_field: "input[name='email']"
+    name_field: "input[name='name']"
+    url_field: "input[name='record_url']"
+    submit_button: "button[type='submit']"
+  requires_confirmation: true
+  confirmation_type: email_link
+  confirmation_subject_contains: "Instant Checkmate"
+  confirmation_link_text: "Confirm Removal"
+
+rescan_days: 90
+legal_basis: "Voluntary opt-out; CCPA right-to-delete for California residents"

@@ -1,0 +1,42 @@
+broker: arrests.com
+display_name: Arrests.com
+homepage: https://arrests.com
+last_updated: "2026-04-27"
+maintainer: "@community"
+
+search:
+  url_template: "https://arrests.com/search?q={first}+{last}&state={state}"
+  method: browser
+  listing_selectors:
+    - "div.search-result"
+    - "article.arrest-record"
+  match_fields:
+    - first_name
+    - last_name
+    - state
+
+opt_out:
+  method: email
+  email_address: support@arrests.com
+  email_subject: "Removal request - $first $last"
+  email_body_template: |
+    Hello,
+
+    I am requesting removal of all arrest records on arrests.com that
+    refer to me.
+
+    Name: $full_name
+    Listing URL: $listing_url
+    Reply to: $email
+
+    Please delete this record under my CCPA right-to-delete and confirm
+    removal in writing within 45 days. If you require an expungement
+    order or other documentation, let me know what you accept.
+
+    Thank you.
+  requires_confirmation: true
+  confirmation_type: manual_ack
+  confirmation_subject_contains: "Arrests.com"
+
+rescan_days: 60
+legal_basis: "CCPA right-to-delete (Cal. Civ. Code 1798.105)"

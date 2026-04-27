@@ -1,0 +1,39 @@
+broker: arrests.org
+display_name: Arrests.org
+homepage: https://arrests.org
+last_updated: "2026-04-27"
+maintainer: "@community"
+
+search:
+  url_template: "https://arrests.org/search?q={first}+{last}&state={state}"
+  method: browser
+  listing_selectors:
+    - "div.result"
+    - "article.arrest"
+  match_fields:
+    - first_name
+    - last_name
+    - state
+    - city
+
+opt_out:
+  method: manual
+  manual_instructions: |
+    Arrests.org runs many state-specific subsites such as
+    florida.arrests.org, texas.arrests.org, california.arrests.org,
+    and so on. Their stated removal process is "send a court order".
+
+    Practical steps:
+      1. Generate a CCPA letter:
+           privacyworm mugshot letters --site arrests.org
+      2. Email it to abuse@arrests.org and to the registered agent
+         in the WHOIS record.
+      3. If you have an expungement order, attach it; that usually
+         works in days. Without one, expect 30 to 60 days and several
+         follow-ups.
+      4. Repeat for each state subdomain that lists you.
+  requires_confirmation: false
+  confirmation_type: manual_ack
+
+rescan_days: 60
+legal_basis: "CCPA right-to-delete; state expungement orders override their stance"

@@ -1,0 +1,43 @@
+broker: publicrecords.directory
+display_name: Public Records Directory
+homepage: https://publicrecords.directory
+last_updated: "2026-04-27"
+maintainer: "@community"
+
+search:
+  url_template: "https://publicrecords.directory/search?first={first}&last={last}&state={state}"
+  method: browser
+  listing_selectors:
+    - "div.record-result"
+    - "li.search-item"
+  match_fields:
+    - first_name
+    - last_name
+    - state
+    - city
+
+opt_out:
+  method: email
+  email_address: privacy@publicrecords.directory
+  email_subject: "Removal request - $first $last"
+  email_body_template: |
+    Hello,
+
+    Please remove all listings on publicrecords.directory that refer
+    to me.
+
+    Name: $full_name
+    Listing URL: $listing_url
+    Reply to: $email
+
+    I am exercising my right to delete personal information under the
+    California Consumer Privacy Act (Cal. Civ. Code 1798.105). Please
+    confirm removal in writing within 45 days.
+
+    Thank you.
+  requires_confirmation: true
+  confirmation_type: manual_ack
+  confirmation_subject_contains: "Public Records"
+
+rescan_days: 90
+legal_basis: "CCPA right-to-delete (Cal. Civ. Code 1798.105)"
