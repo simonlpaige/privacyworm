@@ -177,6 +177,11 @@ def scan(broker, headed):
 )
 def optout(dry_run, headed, broker, auto_confirm):
     """File opt-out requests for found listings."""
+    click.echo(
+        "By proceeding, you confirm these are opt-out requests for your own information.\n"
+        "Do not use this tool to file requests on behalf of others without their consent.\n"
+    )
+
     profile = _load_profile()
     db = StateDB()
 
