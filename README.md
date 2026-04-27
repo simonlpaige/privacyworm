@@ -43,18 +43,28 @@ privacyworm status
 
 ## Supported Brokers (v1)
 
-| Broker | Opt-Out Method | Status |
-|--------|---------------|--------|
-| Spokeo | Web form | Automated |
-| Whitepages | Web form | Automated |
-| BeenVerified | Web form | Automated |
-| Intelius | Web form | Automated |
-| PeopleFinder | Web form | Automated |
-| Radaris | Email | Automated |
-| MyLife | Email | Semi-manual |
-| TruePeopleSearch | Web form | Automated |
-| FastPeopleSearch | Web form | Automated |
-| USPhoneBook | Web form | Automated |
+---
+**What 'Supported' means here:** Scan and opt-out have been tested in headed mode against a live session and manually verified within the last 30 days. Most entries are currently WIP - the playbooks and scaffolding exist, but the selectors and opt-out flows need live verification before we can call them reliable.
+---
+
+| Broker | Scan | Match | Opt-out | Status |
+|--------|------|-------|---------|--------|
+| Spokeo | prototype | low confidence | dry-run only | WIP - needs live verification |
+| Whitepages | prototype | low confidence | dry-run only | WIP - needs live verification |
+| BeenVerified | prototype | low confidence | dry-run only | WIP - needs live verification |
+| Intelius | prototype | low confidence | dry-run only | WIP - needs live verification |
+| PeopleFinder | prototype | low confidence | dry-run only | WIP - needs live verification |
+| Radaris | prototype | low confidence | email template | WIP - needs live verification |
+| MyLife | prototype | low confidence | manual/email | WIP - needs live verification |
+| TruePeopleSearch | prototype | low confidence | dry-run only | WIP - needs live verification |
+| FastPeopleSearch | prototype | low confidence | dry-run only | WIP - needs live verification |
+| USPhoneBook | prototype | low confidence | dry-run only | WIP - needs live verification |
+
+## What about California's DROP system?
+
+California's Data Removal Operations Platform (DROP) goes live January 1 2026 and starts processing requests from August 1 2026. California residents can submit one request through DROP to reach the 500+ brokers registered with the state at once.
+
+PrivacyWorm fills a different gap. It covers non-California users, handles brokers that aren't registered with DROP, runs recurring re-checks (brokers re-list you every 90 days), captures evidence of what was found and when, and handles the stubborn brokers that quietly ignore form submissions.
 
 ## Privacy Guarantees
 
