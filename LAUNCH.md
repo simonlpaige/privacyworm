@@ -125,14 +125,24 @@ That's fine. Not every launch lands. If HN yawns:
 - Reread the body. First paragraph is everything. Rewrite and try a second "Show HN: [new angle]" in 6-8 weeks -- HN is cool with that if the project has meaningful new content.
 
 ## Prep Checklist (before hitting Submit on HN)
-- [ ] README has a 60-second quickstart that actually works on a fresh machine.
-- [ ] Install instructions tested on at least Mac and one of {Linux, Windows}.
+
+The bar before launch is higher than "the demo works." A privacy
+tool that overpromises gets torn apart in the comments.
+
+- [ ] One broker fully confirmed removed end-to-end. The verification block in that playbook reads `scan: live_e2e` and `optout: confirmed_removed`.
+- [ ] Three brokers fixture-tested AND dry-run accurate (not just parsed). `privacyworm test-playbooks` is green for each.
+- [ ] README support table reflects actual verification status, generated from playbook metadata. No optimistic copy.
+- [ ] `privacyworm review` approval flow exists and works on a real scan.
+- [ ] `network.log` is redacted by default. `privacyworm export-audit` round-trips.
+- [ ] `SECURITY.md` describes Fernet (AES-128-CBC + HMAC-SHA256) and Argon2id, not "AES-256."
+- [ ] California users see the DROP nudge. `--skip-drop-reminder` silences it.
+- [ ] Known Limitations section visible near the top of README.
+- [ ] CI green: ruff, mypy, bandit, pip-audit, pytest with coverage reported.
+- [ ] Install instructions tested on Mac and at least one of {Linux, Windows}.
 - [ ] CONTRIBUTING.md is readable by someone who's never seen the project.
 - [ ] PLAYBOOK_SPEC.md is clear enough that a non-author could write one.
-- [ ] CI is green on main.
 - [ ] Issue templates exist (bug, new-broker-request, playbook-submission).
-- [ ] LICENSE file is MIT, not Apache (MIT is more inviting for hobbyist PRs).
-- [ ] SECURITY.md explains where PII lives and how it's protected.
+- [ ] LICENSE file is MIT.
 - [ ] At least one broker works end-to-end with a screencast or GIF in README.
 - [ ] Simon has half a day clear to reply to comments within 30 min of posting.
 
