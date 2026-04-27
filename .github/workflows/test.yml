@@ -26,7 +26,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[dev,mugshot]"
 
       - name: Run tests
         run: pytest --cov=privacyworm --cov-report=term-missing -v
@@ -47,7 +47,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[dev,mugshot]"
 
       - name: Ruff
         run: ruff check .
