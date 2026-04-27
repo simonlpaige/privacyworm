@@ -30,7 +30,7 @@ from privacyworm.profile import (
     decrypt_profile,
     encrypt_profile,
 )
-from privacyworm.runner import check_inbox, file_optouts, scan_all
+from privacyworm.runner import check_inbox, file_optouts, review_listings, scan_all
 from privacyworm.social.cli import social as _social_group
 from privacyworm.state import StateDB
 
@@ -227,8 +227,39 @@ def scan(broker, headed):
 
     click.echo(f"\nTotal: {total} listing(s) found across {len(results)} broker(s).")
     if total > 0:
-        click.echo("Run 'privacyworm optout --dry-run' to preview opt-out requests.")
+        click.echo(
+            "Run 'privacyworm review' to look at what was found and approve "
+            "individual listings before any opt-out gets filed."
+        )
 
+    db.close()
+
+
+@cli.command()
+@click.option("--broker", default=None, help="Review listings from a single broker.")
+def review(broker):
+    """Walk found listings, show evidence, and approve them one by one.
+
+    This is the safety step between scan and opt-out. PrivacyWorm shows
+    the broker, the score, the matched fields, and the exact opt-out
+    payload that would go out the door. You answer y / N / skip / quit.
+    Only listings you approve here move on when you run
+    'privacyworm optout --approved-only'.
+    """
+    profile, db, _ = _load_profile_and_state()
+    summary = review_listings(profile, db, broker_name=broker)
+    click.echo(
+        "\nReview summary: "
+        f"approved {summary['approved']}, "
+        f"rejected {summary['rejected']}, "
+        f"skipped {summary['skipped']}"
+        + (f", no playbook {summary['no_playbook']}" if summary["no_playbook"] else "")
+    )
+    if summary["approved"]:
+        click.echo(
+            "Run 'privacyworm optout --approved-only' to file the approved "
+            "opt-outs."
+        )
     db.close()
 
 
@@ -243,7 +274,12 @@ def scan(broker, headed):
     is_flag=True,
     help="Skip the per-listing confirmation prompt and file every opt-out.",
 )
-def optout(dry_run, headed, broker, auto_confirm):
+@click.option(
+    "--approved-only",
+    is_flag=True,
+    help="Only file opt-outs for listings already approved with 'privacyworm review'.",
+)
+def optout(dry_run, headed, broker, auto_confirm, approved_only):
     """File opt-out requests for found listings."""
     click.echo(
         "By proceeding, you confirm these are opt-out requests for your own information.\n"
@@ -262,10 +298,17 @@ def optout(dry_run, headed, broker, auto_confirm):
         headed=headed,
         broker_name=broker,
         auto_confirm=auto_confirm,
+        approved_only=approved_only,
     )
 
     if not outcomes:
-        click.echo("No listings to opt out from. Run 'privacyworm scan' first.")
+        if approved_only:
+            click.echo(
+                "No approved listings yet. Run 'privacyworm review' first to "
+                "approve individual listings."
+            )
+        else:
+            click.echo("No listings to opt out from. Run 'privacyworm scan' first.")
     else:
         for o in outcomes:
             status = "OK" if o["success"] else "FAILED"

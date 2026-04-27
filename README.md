@@ -17,17 +17,21 @@ playwright install chromium
 privacyworm init
 
 # See what the brokers have on you
-privacyworm scan
+privacyworm scan --headed
 
-# Preview what opt-out requests would look like
-privacyworm optout --dry-run
+# Look at each listing, see the evidence, approve or reject one by one
+privacyworm review
 
-# Actually file the opt-outs
-privacyworm optout
+# File the opt-outs you approved
+privacyworm optout --approved-only
 
 # Check on the status of everything
 privacyworm status
 ```
+
+The three-step `scan -> review -> optout --approved-only` flow is the
+recommended path. Nothing gets filed until you have eyeballed each
+listing and said yes.
 
 ## How It Works
 

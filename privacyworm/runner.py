@@ -149,6 +149,136 @@ def _confirm_listing(listing_row: dict, profile: Profile) -> bool:
     return answer in ("y", "yes")
 
 
+REVIEWABLE_STATUSES = ("found", "candidate_found", "needs_review")
+APPROVED_STATUSES = ("approved",)
+
+
+def _decode_matched_fields(raw) -> list[str]:
+    """Pull a list of field names out of a state.db row's matched_fields cell."""
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return list(raw)
+    if isinstance(raw, str):
+        try:
+            return json.loads(raw) or []
+        except (json.JSONDecodeError, TypeError):
+            return []
+    return []
+
+
+def _format_optout_payload(playbook: Playbook, profile: Profile, listing_row: dict) -> str:
+    """Build the same dry-run payload the opt-out flow would send.
+
+    This is what the user sees before approving. It is the strongest
+    "no surprises" check we have - a listing only gets opted out using
+    exactly these fields.
+    """
+    broker = _make_broker(playbook, profile, headed=False)
+    try:
+        result = broker.file_optout(listing_row, dry_run=True)
+        return result.get("details", "")
+    except Exception as e:
+        return f"(could not build dry-run payload: {e})"
+
+
+def review_listings(
+    profile: Profile,
+    db: StateDB,
+    broker_name: str | None = None,
+    playbooks_dir: Path | None = None,
+) -> dict:
+    """Walk pending listings, show evidence, ask the user to approve each one.
+
+    For each listing, the user sees:
+      - broker name, listing URL, score, confidence, matched fields
+      - the exact opt-out payload that would be filed if approved
+    Then they choose y / N / skip / quit. The result is recorded back
+    on the listing's status so ``optout --approved-only`` can pick it
+    up.
+
+    Returns a summary dict: counts of approved / rejected / skipped /
+    failed lookups. The caller (the CLI) prints it back to the user.
+    """
+    if broker_name:
+        listings = []
+        for s in REVIEWABLE_STATUSES:
+            listings.extend(db.get_listings(broker=broker_name, status=s))
+    elif playbooks_dir is not None:
+        known = {pb.broker for pb in load_all_playbooks(directory=playbooks_dir)}
+        listings = []
+        for s in REVIEWABLE_STATUSES:
+            listings.extend(r for r in db.get_listings(status=s) if r["broker"] in known)
+    else:
+        listings = []
+        for s in REVIEWABLE_STATUSES:
+            listings.extend(db.get_listings(status=s))
+
+    summary = {"approved": 0, "rejected": 0, "skipped": 0, "no_playbook": 0}
+
+    if not listings:
+        return summary
+
+    name_str = f"{profile.name.first} {profile.name.last}".strip()
+    location = ""
+    if profile.addresses:
+        addr = profile.addresses[0]
+        parts = [p for p in (addr.city, addr.state) if p]
+        if parts:
+            location = ", " + " ".join(parts)
+
+    for listing_row in listings:
+        playbook = get_playbook(listing_row["broker"], directory=playbooks_dir)
+        if not playbook:
+            logger.warning(f"No playbook for broker {listing_row['broker']}, skipping")
+            summary["no_playbook"] += 1
+            continue
+
+        matched = _decode_matched_fields(listing_row.get("matched_fields"))
+        missing = [f for f in ALL_MATCHABLE_FIELDS if f not in matched]
+        score = listing_row.get("match_score")
+        confidence = listing_row.get("confidence") or "unknown"
+        score_label = f"{score}/100" if score is not None else "unknown"
+
+        print()
+        print(f"  Broker:  {listing_row['broker']}")
+        print(f"  Match:   {name_str}{location} (score: {score_label} - {confidence} confidence)")
+        print(f"  Matched: {', '.join(matched) if matched else 'none'}")
+        print(f"  Missing: {', '.join(missing) if missing else 'none'}")
+        if listing_row.get("listing_url"):
+            print(f"  URL:     {listing_row['listing_url']}")
+        payload = _format_optout_payload(playbook, profile, listing_row)
+        if payload:
+            print("  Would file:")
+            for line in payload.splitlines():
+                print(f"    {line}")
+
+        try:
+            answer = input("Approve this listing for opt-out? [y/N/skip/quit]: ").strip().lower()
+        except EOFError:
+            answer = "quit"
+
+        if answer in ("q", "quit"):
+            print("Stopped reviewing. Remaining listings stay in needs_review.")
+            for r in listings[listings.index(listing_row):]:
+                if r["status"] in ("found", "candidate_found"):
+                    db.update_listing_status(r["id"], "needs_review")
+            break
+
+        if answer in ("y", "yes"):
+            db.update_listing_status(listing_row["id"], "approved")
+            summary["approved"] += 1
+        elif answer in ("s", "skip"):
+            if listing_row["status"] in ("found", "candidate_found"):
+                db.update_listing_status(listing_row["id"], "needs_review")
+            summary["skipped"] += 1
+        else:
+            db.update_listing_status(listing_row["id"], "rejected")
+            summary["rejected"] += 1
+
+    return summary
+
+
 def file_optouts(
     profile: Profile,
     db: StateDB,
@@ -157,6 +287,7 @@ def file_optouts(
     broker_name: str | None = None,
     playbooks_dir: Path | None = None,
     auto_confirm: bool = False,
+    approved_only: bool = False,
 ) -> list[dict]:
     """File opt-out requests for all found listings.
 
@@ -171,14 +302,25 @@ def file_optouts(
     ``auto_confirm`` only bypasses the prompt for high-confidence matches.
     Low and medium confidence listings always go through the manual prompt
     so we never blindly file off a name collision.
+
+    ``approved_only=True`` restricts the work to listings the user
+    already approved via ``privacyworm review``. That is the recommended
+    flow; ``found``/``candidate_found`` listings stay alone until
+    someone explicitly looks at them.
     """
+    target_statuses = APPROVED_STATUSES if approved_only else ("found",)
+
+    listings: list[dict] = []
     if broker_name:
-        listings = db.get_listings(broker=broker_name, status="found")
+        for s in target_statuses:
+            listings.extend(db.get_listings(broker=broker_name, status=s))
     elif playbooks_dir is not None:
         known = {pb.broker for pb in load_all_playbooks(directory=playbooks_dir)}
-        listings = [r for r in db.get_listings(status="found") if r["broker"] in known]
+        for s in target_statuses:
+            listings.extend(r for r in db.get_listings(status=s) if r["broker"] in known)
     else:
-        listings = db.get_listings(status="found")
+        for s in target_statuses:
+            listings.extend(db.get_listings(status=s))
     outcomes = []
 
     for listing_row in listings:
@@ -187,8 +329,15 @@ def file_optouts(
             logger.warning(f"No playbook for broker {listing_row['broker']}, skipping")
             continue
 
+        # Listings that came through ``review`` already carry the user's
+        # approval, so we only re-prompt for the auto-confirm flow when
+        # the listing was not pre-approved.
         confidence = listing_row.get("confidence") or "low"
-        needs_prompt = not auto_confirm or confidence != "high"
+        already_approved = listing_row.get("status") == "approved"
+        needs_prompt = (
+            not already_approved
+            and (not auto_confirm or confidence != "high")
+        )
         if needs_prompt and not _confirm_listing(listing_row, profile):
             outcomes.append({
                 "broker": listing_row["broker"],
@@ -214,7 +363,7 @@ def file_optouts(
         result = broker.file_optout(listing_row, dry_run=dry_run)
 
         if not dry_run and result["success"]:
-            db.update_listing_status(listing_row["id"], "opt_out_filed")
+            db.update_listing_status(listing_row["id"], "optout_submitted")
             db.add_optout(
                 listing_id=listing_row["id"],
                 method=result["method"],
@@ -242,7 +391,9 @@ def check_inbox(profile: Profile, db: StateDB) -> list[dict]:
     # Get all pending opt-outs and their associated playbooks
     pending = db.get_optouts(status="pending")
     for optout in pending:
-        listing = db.get_listings(status="opt_out_filed")
+        listing = []
+        for s in ("optout_submitted", "opt_out_filed", "confirmation_needed"):
+            listing.extend(db.get_listings(status=s))
         matching_listing = next((l for l in listing if l["id"] == optout["listing_id"]), None)
         if not matching_listing:
             continue
@@ -267,7 +418,7 @@ def check_inbox(profile: Profile, db: StateDB) -> list[dict]:
                     continue
                 if inbox.click_confirmation_link(link):
                     db.confirm_optout(optout["id"])
-                    db.update_listing_status(matching_listing["id"], "opt_out_confirmed")
+                    db.update_listing_status(matching_listing["id"], "confirmation_clicked")
                     processed.append({
                         "broker": matching_listing["broker"],
                         "optout_id": optout["id"],
