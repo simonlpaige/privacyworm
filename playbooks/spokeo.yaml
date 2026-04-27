@@ -16,6 +16,12 @@ search:
     - state
     - city
 
+extract:
+  listing_url: "a.profile-link::attr(href)"
+  full_name: "h2::text"
+  city_state: "p.location::text"
+  age: "p.age::text"
+
 opt_out:
   method: web_form
   url: "https://www.spokeo.com/optout"
@@ -27,6 +33,25 @@ opt_out:
   confirmation_type: email_link
   confirmation_subject_contains: "Spokeo Opt Out"
   confirmation_link_text: "Confirm"
+  confirmation_domains:
+    - spokeo.com
+  confirmation_path_contains:
+    - /optout/confirm
+
+tests:
+  fixtures:
+    - file: "tests/fixtures/spokeo_results.html"
+      expected:
+        listings: 2
+        first_listing:
+          full_name: "Simon L Paige"
+          city_state: "Kansas City, MO"
 
 rescan_days: 90
 legal_basis: "CCPA if CA resident; otherwise Spokeo voluntary opt-out program"
+
+verification:
+  verified_at: "2026-04-27"
+  verified_by: "@simonlpaige"
+  scan: fixture_only
+  optout: dry_run_only

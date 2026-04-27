@@ -30,6 +30,8 @@ from privacyworm.profile import (
     decrypt_profile,
     encrypt_profile,
 )
+from privacyworm.extract import extract_listings_from_html
+from privacyworm.playbook import load_all_playbooks
 from privacyworm.runner import check_inbox, file_optouts, review_listings, scan_all
 from privacyworm.social.cli import social as _social_group
 from privacyworm.state import StateDB
@@ -466,6 +468,76 @@ def delete_profile(confirmed):
             click.echo(f"Deleted {t}")
         except OSError as e:
             click.echo(f"Could not delete {t}: {e}", err=True)
+
+
+@cli.command(name="test-playbooks")
+@click.option("--broker", default=None, help="Test a single broker by name.")
+def test_playbooks(broker):
+    """Run each playbook's tests.fixtures section against its expectations.
+
+    For every playbook with a ``tests.fixtures`` block, load each HTML
+    fixture, run the extract selectors against it, and compare the
+    output against the ``expected`` dict in the playbook. This is a
+    fast round-trip you can run before sending a PR.
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+    playbooks = load_all_playbooks()
+    if broker:
+        playbooks = [pb for pb in playbooks if pb.broker == broker]
+        if not playbooks:
+            click.echo(f"No playbook found for broker: {broker}")
+            raise SystemExit(1)
+
+    total = 0
+    failed = 0
+    for pb in playbooks:
+        if not pb.tests or not pb.tests.fixtures:
+            continue
+        for fx in pb.tests.fixtures:
+            total += 1
+            fixture_path = (repo_root / fx.file).resolve()
+            if not fixture_path.exists():
+                click.echo(f"  [FAIL] {pb.broker}: fixture {fx.file} not found")
+                failed += 1
+                continue
+            html = fixture_path.read_text(encoding="utf-8")
+            try:
+                listings = extract_listings_from_html(
+                    html,
+                    pb.search.listing_selectors,
+                    pb.extract,
+                )
+            except Exception as e:
+                click.echo(f"  [FAIL] {pb.broker}: extract error: {e}")
+                failed += 1
+                continue
+
+            problems = []
+            if fx.expected:
+                if fx.expected.listings is not None and len(listings) != fx.expected.listings:
+                    problems.append(
+                        f"expected {fx.expected.listings} listings, got {len(listings)}"
+                    )
+                if fx.expected.first_listing and listings:
+                    first = listings[0]
+                    for key, expected_val in fx.expected.first_listing.items():
+                        actual = first.get(key)
+                        if actual != expected_val:
+                            problems.append(
+                                f"first_listing.{key}: expected {expected_val!r}, got {actual!r}"
+                            )
+            if problems:
+                click.echo(f"  [FAIL] {pb.broker}: {'; '.join(problems)}")
+                failed += 1
+            else:
+                click.echo(f"  [OK]   {pb.broker}: {len(listings)} listing(s) extracted")
+
+    if total == 0:
+        click.echo("No playbook fixtures to run.")
+    else:
+        click.echo(f"\n{total - failed}/{total} playbook fixture(s) passed.")
+    if failed:
+        raise SystemExit(1)
 
 
 @cli.command(name="export-audit")

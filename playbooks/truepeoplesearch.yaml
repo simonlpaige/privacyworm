@@ -30,3 +30,9 @@ opt_out:
 
 rescan_days: 90
 legal_basis: "TruePeopleSearch voluntary removal tool"
+
+verification:
+  verified_at: "2026-04-27"
+  verified_by: "@simonlpaige"
+  scan: fixture_only
+  optout: dry_run_only

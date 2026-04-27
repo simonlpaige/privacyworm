@@ -36,6 +36,62 @@ search:
 | `{city}` | First address city |
 | `{zip}` | First address ZIP |
 
+## `extract` Section (optional)
+
+Tells the runner how to pull structured fields off each listing card.
+Each entry is either a string with a `::text` or `::attr(NAME)` suffix
+on the CSS selector, or a small dict if the field repeats (relatives,
+addresses).
+
+```yaml
+extract:
+  listing_url: "a.profile-link::attr(href)"
+  full_name: "h2::text"
+  age: "p.age::text"
+  address: ".address-line::text"
+  city_state: "p.location::text"
+  relatives:
+    selector: "li.relative::text"
+    many: true
+```
+
+The output is a flat dict per listing card (`full_name`, `age`, etc.)
+that the matching engine and review screen both use.
+
+## `tests` Section (optional)
+
+For round-tripping the extract logic against a saved HTML fixture.
+
+```yaml
+tests:
+  fixtures:
+    - file: "tests/fixtures/spokeo_results.html"
+      expected:
+        listings: 2
+        first_listing:
+          full_name: "Simon L Paige"
+          city_state: "Kansas City, MO"
+```
+
+Run them with `privacyworm test-playbooks`. The check passes when the
+extract count and first-listing values match.
+
+## `verification` Section (optional but expected)
+
+Human-readable record of how recently and how completely this playbook
+was checked. The README support table is generated from this block.
+
+```yaml
+verification:
+  verified_at: "2026-04-27"      # ISO date of the last check
+  verified_by: "@simonlpaige"    # GitHub handle that did the check
+  scan: fixture_only             # fixture_only | live_manual | live_e2e
+  optout: dry_run_only           # dry_run_only | submitted | confirmed_removed
+```
+
+Honesty rule: if you cannot fill in `verified_at` and stand behind it,
+leave the playbook out of the README support table.
+
 ## `opt_out` Section
 
 ```yaml
@@ -65,7 +121,28 @@ opt_out:
   confirmation_type: "email_link" | "none" | "manual_ack"   # Default: "none"
   confirmation_subject_contains: string      # Substring to match in confirmation emails
   confirmation_link_text: string             # Link text to look for in confirmation emails
+  confirmation_domains:                       # Allowlist of domains for confirmation links
+    - "spokeo.com"
+  confirmation_path_contains:                 # Path substrings to require on the link
+    - "/optout/confirm"
 ```
+
+### `legal_basis`
+
+Either a plain string (applied to everyone) or a dict keyed by US
+state code with a `default` fallback:
+
+```yaml
+legal_basis:
+  default: "Voluntary opt-out request"
+  CA: "California Delete Act / CCPA Section 1798.105 deletion request"
+  CO: "Colorado Privacy Act deletion request"
+  TX: "Texas Data Privacy and Security Act / Data Broker Act deletion request"
+```
+
+The runner reads `profile.addresses[0].state` and picks the entry that
+matches. With no match it falls back to `default`, then to an
+unspecified generic line in the email body.
 
 ## Validation Rules
 

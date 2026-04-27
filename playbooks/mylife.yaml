@@ -46,3 +46,9 @@ opt_out:
 
 rescan_days: 90
 legal_basis: "MyLife email removal request; CCPA if CA resident"
+
+verification:
+  verified_at: "2026-04-27"
+  verified_by: "@simonlpaige"
+  scan: fixture_only
+  optout: dry_run_only

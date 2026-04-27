@@ -33,3 +33,9 @@ opt_out:
 
 rescan_days: 60
 legal_basis: "CCPA right-to-delete; GDPR Art. 17 for EU residents"
+
+verification:
+  verified_at: "2026-04-27"
+  verified_by: "@simonlpaige"
+  scan: fixture_only
+  optout: dry_run_only

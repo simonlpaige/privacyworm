@@ -41,3 +41,9 @@ opt_out:
 
 rescan_days: 90
 legal_basis: "CCPA right-to-delete (Cal. Civ. Code 1798.105)"
+
+verification:
+  verified_at: "2026-04-27"
+  verified_by: "@simonlpaige"
+  scan: fixture_only
+  optout: dry_run_only

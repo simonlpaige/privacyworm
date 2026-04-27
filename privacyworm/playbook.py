@@ -1,7 +1,7 @@
 """Load and validate broker playbooks from YAML files."""
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 import tldextract
 import yaml
@@ -13,6 +13,21 @@ VALID_OPT_OUT_METHODS = {"web_form", "email", "manual"}
 VALID_CONFIRMATION_TYPES = {"email_link", "none", "manual_ack"}
 VALID_SEARCH_METHODS = {"browser", "http"}
 VALID_MATCH_FIELDS = {"first_name", "last_name", "state", "city", "zip", "full_name", "age", "address", "phone"}
+VALID_VERIFICATION_SCAN = {"fixture_only", "live_manual", "live_e2e"}
+VALID_VERIFICATION_OPTOUT = {"dry_run_only", "submitted", "confirmed_removed"}
+
+
+class ExtractField(BaseModel):
+    """A structured extractor for one field on a listing card.
+
+    Two shapes for one declaration:
+    - "selector::attr(href)" or "selector::text" as a plain string for
+      single-value fields like full_name or listing_url.
+    - The dict form below for repeated fields (relatives, addresses)
+      where ``many: true`` collects every matching node.
+    """
+    selector: str
+    many: bool = False
 
 
 class SearchConfig(BaseModel):
@@ -26,6 +41,52 @@ class SearchConfig(BaseModel):
     def validate_method(cls, v: str) -> str:
         if v not in VALID_SEARCH_METHODS:
             raise ValueError(f"search method must be one of {VALID_SEARCH_METHODS}, got '{v}'")
+        return v
+
+
+class TestExpected(BaseModel):
+    """Optional per-fixture expectations used by ``privacyworm test-playbooks``."""
+    listings: Optional[int] = None
+    first_listing: dict[str, str] = {}
+
+
+class TestFixture(BaseModel):
+    file: str
+    expected: Optional[TestExpected] = None
+
+
+class TestConfig(BaseModel):
+    fixtures: list[TestFixture] = []
+
+
+class VerificationConfig(BaseModel):
+    """How recently and how completely this playbook was checked.
+
+    The README support table is generated from these fields, so the
+    rule is: if you cannot honestly fill them in, leave the playbook
+    out of the table.
+    """
+    verified_at: Optional[str] = None
+    verified_by: Optional[str] = None
+    scan: str = "fixture_only"
+    optout: str = "dry_run_only"
+
+    @field_validator("scan")
+    @classmethod
+    def validate_scan(cls, v: str) -> str:
+        if v not in VALID_VERIFICATION_SCAN:
+            raise ValueError(
+                f"verification.scan must be one of {VALID_VERIFICATION_SCAN}, got '{v}'"
+            )
+        return v
+
+    @field_validator("optout")
+    @classmethod
+    def validate_optout(cls, v: str) -> str:
+        if v not in VALID_VERIFICATION_OPTOUT:
+            raise ValueError(
+                f"verification.optout must be one of {VALID_VERIFICATION_OPTOUT}, got '{v}'"
+            )
         return v
 
 
@@ -48,6 +109,8 @@ class OptOutConfig(BaseModel):
     confirmation_type: str = "none"
     confirmation_subject_contains: Optional[str] = None
     confirmation_link_text: Optional[str] = None
+    confirmation_domains: list[str] = []
+    confirmation_path_contains: list[str] = []
     manual_instructions: Optional[str] = None
 
     @field_validator("method")
@@ -79,7 +142,13 @@ class Playbook(BaseModel):
     search: SearchConfig
     opt_out: OptOutConfig
     rescan_days: int = 90
-    legal_basis: Optional[str] = None
+    # legal_basis can be a plain string (v1 playbooks) or a dict keyed
+    # by US state code with a "default" fallback (v2). When it is a
+    # dict, the runner picks the entry that matches the user's state.
+    legal_basis: Optional[Union[str, dict[str, str]]] = None
+    extract: dict[str, Union[str, ExtractField]] = {}
+    tests: Optional[TestConfig] = None
+    verification: Optional[VerificationConfig] = None
 
     @model_validator(mode="after")
     def validate_url_schemes_and_domains(self) -> "Playbook":
@@ -110,6 +179,27 @@ class Playbook(BaseModel):
                 )
 
         return self
+
+
+def resolve_legal_basis(playbook: Playbook, state_code: Optional[str]) -> Optional[str]:
+    """Pick the legal basis line to use given the user's state.
+
+    The playbook field may be a string (the v1 form, applied to
+    everyone) or a dict keyed by two-letter state code with a
+    ``default`` fallback (the v2 form). When the user's state has no
+    matching entry, ``default`` wins; with no default, the function
+    returns None and callers should fall back to a generic line.
+    """
+    basis = playbook.legal_basis
+    if basis is None:
+        return None
+    if isinstance(basis, str):
+        return basis
+    if state_code:
+        entry = basis.get(state_code.upper())
+        if entry:
+            return entry
+    return basis.get("default")
 
 
 def load_playbook(path: Path) -> Playbook:
