@@ -379,8 +379,73 @@ def file_optouts(
     return outcomes
 
 
-def check_inbox(profile: Profile, db: StateDB) -> list[dict]:
-    """Check the inbox for confirmation emails and process them."""
+def _link_domain_allowed(link: str, playbook: Playbook) -> bool:
+    """True when the link's registered domain is allowlisted for this broker.
+
+    Allowlist sources, in order:
+      1. ``opt_out.confirmation_domains`` from the playbook (explicit).
+      2. The broker's homepage registered domain (implicit fallback).
+    """
+    domains = list(playbook.opt_out.confirmation_domains)
+    if not domains:
+        domains = [_registered_domain(playbook.homepage)]
+    link_domain = _registered_domain(link)
+    return link_domain in domains
+
+
+def _link_path_allowed(link: str, playbook: Playbook) -> bool:
+    """True when the link path contains one of the required substrings.
+
+    With no ``confirmation_path_contains`` entries the check is skipped.
+    """
+    required = playbook.opt_out.confirmation_path_contains
+    if not required:
+        return True
+    return any(needle in link for needle in required)
+
+
+def _ask_user_to_click(link: str, broker_name: str, body_source: str) -> bool:
+    """Print the link and prompt the user. y/yes -> click."""
+    print()
+    print(f"Confirmation link from {broker_name}:")
+    print(f"  {link}")
+    if body_source == "html":
+        print(
+            "  Note: this link came from an HTML-only email. HTML emails "
+            "are easier to spoof; double-check the URL above is the broker."
+        )
+    try:
+        answer = input("Click this confirmation link? [y/N]: ").strip().lower()
+    except EOFError:
+        return False
+    return answer in ("y", "yes")
+
+
+def check_inbox(
+    profile: Profile,
+    db: StateDB,
+    auto_confirm_inbox: bool = False,
+) -> list[dict]:
+    """Check the inbox for confirmation emails and process them.
+
+    Each candidate link goes through three checks before anything gets
+    clicked:
+
+      1. The link's registered domain must be in the playbook's
+         ``confirmation_domains`` allowlist (homepage as default).
+      2. If ``confirmation_path_contains`` is set, the link path must
+         contain one of the substrings.
+      3. By default the user sees the URL and is asked y/N. Pass
+         ``auto_confirm_inbox=True`` to skip the prompt - that mode is
+         a footgun, the caller should warn loudly.
+
+    HTML-only emails always go through the prompt regardless of
+    ``auto_confirm_inbox``, since HTML email is easier to spoof.
+
+    Each (broker, IMAP UID) pair is recorded in
+    ``processed_emails`` so the same confirmation email never gets
+    clicked twice.
+    """
     if not profile.inbox:
         logger.warning("No inbox configured in profile. Run 'privacyworm init' to set one up.")
         return []
@@ -408,17 +473,42 @@ def check_inbox(profile: Profile, db: StateDB) -> list[dict]:
 
         confirmations = inbox.check_confirmations(subject_filter)
         for conf in confirmations:
-            # Try to click the confirmation link
+            uid = conf.get("uid", "")
+            if uid and db.email_already_processed(matching_listing["broker"], uid):
+                logger.info(
+                    f"Already processed confirmation email uid={uid} for "
+                    f"{matching_listing['broker']}, skipping."
+                )
+                continue
+
             for link in conf["links"]:
-                if not _same_registered_domain(link, playbook.homepage):
+                if not _link_domain_allowed(link, playbook):
                     logger.warning(
-                        "Skipping confirmation link: domain does not match broker homepage "
-                        f"(link={link!r}, homepage={playbook.homepage!r})"
+                        "Skipping confirmation link: domain not in allowlist "
+                        f"(link={link!r}, allowed={playbook.opt_out.confirmation_domains!r}, "
+                        f"homepage={playbook.homepage!r})"
                     )
                     continue
+                if not _link_path_allowed(link, playbook):
+                    logger.warning(
+                        "Skipping confirmation link: path does not match "
+                        f"required substrings {playbook.opt_out.confirmation_path_contains!r} "
+                        f"(link={link!r})"
+                    )
+                    continue
+
+                # Either explicit consent or HTML-only email always asks.
+                must_prompt = (not auto_confirm_inbox) or conf.get("body_source") == "html"
+                if must_prompt and not _ask_user_to_click(
+                    link, matching_listing["broker"], conf.get("body_source", "text")
+                ):
+                    continue
+
                 if inbox.click_confirmation_link(link):
                     db.confirm_optout(optout["id"])
                     db.update_listing_status(matching_listing["id"], "confirmation_clicked")
+                    if uid:
+                        db.mark_email_processed(matching_listing["broker"], uid)
                     processed.append({
                         "broker": matching_listing["broker"],
                         "optout_id": optout["id"],

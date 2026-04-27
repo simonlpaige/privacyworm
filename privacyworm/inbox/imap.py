@@ -23,7 +23,16 @@ class ImapInbox(BaseInbox):
         self.password = os.environ.get(config.pass_env, "")
 
     def check_confirmations(self, subject_contains: str) -> list[dict]:
-        """Search IMAP INBOX for unread messages matching the subject."""
+        """Search IMAP INBOX for unread messages matching the subject.
+
+        Each result dict carries:
+            subject, from_addr, body, links, uid, body_source
+
+        ``body_source`` is "text" when the URLs were extracted from a
+        text/plain part and "html" when only an HTML part was present.
+        Callers should treat HTML-only emails with extra suspicion -
+        they are easier to spoof confirmation links inside.
+        """
         log_network_request("IMAP", f"{self.host}:{self.port}", f"search for '{subject_contains}'")
         logger.info(f"Checking inbox at {self.host} for '{subject_contains}'")
 
@@ -43,16 +52,30 @@ class ImapInbox(BaseInbox):
                 raw = msg_data[0][1]
                 msg = email.message_from_bytes(raw)
 
-                body = ""
+                text_body = ""
+                html_body = ""
                 if msg.is_multipart():
                     for part in msg.walk():
-                        if part.get_content_type() == "text/plain":
-                            body = part.get_payload(decode=True).decode(errors="replace")
-                            break
-                        elif part.get_content_type() == "text/html":
-                            body = part.get_payload(decode=True).decode(errors="replace")
+                        ctype = part.get_content_type()
+                        if ctype == "text/plain" and not text_body:
+                            text_body = part.get_payload(decode=True).decode(errors="replace")
+                        elif ctype == "text/html" and not html_body:
+                            html_body = part.get_payload(decode=True).decode(errors="replace")
                 else:
-                    body = msg.get_payload(decode=True).decode(errors="replace")
+                    payload = msg.get_payload(decode=True).decode(errors="replace")
+                    if msg.get_content_type() == "text/html":
+                        html_body = payload
+                    else:
+                        text_body = payload
+
+                # Prefer links from the plain-text part; only fall back
+                # to HTML when the email is HTML-only.
+                if text_body:
+                    body = text_body
+                    body_source = "text"
+                else:
+                    body = html_body
+                    body_source = "html"
 
                 links = URL_PATTERN.findall(body)
 
@@ -62,6 +85,7 @@ class ImapInbox(BaseInbox):
                     "body": body[:2000],
                     "links": links,
                     "uid": num.decode(),
+                    "body_source": body_source,
                 })
 
             conn.logout()

@@ -51,6 +51,14 @@ CREATE TABLE IF NOT EXISTS rescans (
     last_scanned_at TEXT NOT NULL,
     next_scan_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS processed_emails (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    broker TEXT NOT NULL,
+    uid TEXT NOT NULL,
+    processed_at TEXT NOT NULL,
+    UNIQUE (broker, uid)
+);
 """
 
 # The listing state machine. New listings start at ``found`` (compat
@@ -337,6 +345,24 @@ class StateDB:
             "SELECT * FROM rescans WHERE next_scan_at <= ?", (now,)
         ).fetchall()
         return [dict(row) for row in rows]
+
+    # -- Confirmation emails --
+
+    def email_already_processed(self, broker: str, uid: str) -> bool:
+        """True when (broker, uid) has already been recorded as processed."""
+        row = self.conn.execute(
+            "SELECT 1 FROM processed_emails WHERE broker = ? AND uid = ?",
+            (broker, uid),
+        ).fetchone()
+        return row is not None
+
+    def mark_email_processed(self, broker: str, uid: str) -> None:
+        """Record (broker, uid) so the same confirmation email is not clicked twice."""
+        self.conn.execute(
+            "INSERT OR IGNORE INTO processed_emails (broker, uid, processed_at) VALUES (?, ?, ?)",
+            (broker, uid, self._now()),
+        )
+        self.conn.commit()
 
     # -- Summary --
 

@@ -413,12 +413,29 @@ def inbox():
 
 
 @inbox.command()
-def check():
+@click.option(
+    "--auto-confirm-inbox",
+    is_flag=True,
+    help=(
+        "Skip the per-link y/N prompt for confirmation emails. HTML-only "
+        "emails are still confirmed by the user even with this flag set."
+    ),
+)
+def check(auto_confirm_inbox):
     """Poll IMAP inbox for confirmation emails and process them."""
     profile, db, _ = _load_profile_and_state()
 
     click.echo("Checking inbox for confirmation emails...\n")
-    processed = check_inbox(profile, db)
+    if auto_confirm_inbox:
+        click.echo(
+            "WARNING: --auto-confirm-inbox skips the per-link prompt. "
+            "PrivacyWorm still validates that each link's domain and "
+            "path match the broker's playbook, but you give up the last "
+            "human look at the URL. Use it only when you trust the "
+            "playbook's allowlists for that broker.",
+            err=True,
+        )
+    processed = check_inbox(profile, db, auto_confirm_inbox=auto_confirm_inbox)
 
     if not processed:
         click.echo("No new confirmations found.")
