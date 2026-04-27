@@ -8,8 +8,11 @@ from urllib.parse import urlsplit, urlunsplit
 DEFAULT_CONFIG_DIR = Path.home() / ".privacyworm"
 PROFILE_FILENAME = "profile.yaml"
 ENCRYPTED_PROFILE_FILENAME = "profile.yaml.enc"
+SOCIAL_TOKENS_FILENAME = "social_tokens.yaml.enc"
 STATE_DB_FILENAME = "state.db"
 ENCRYPTED_STATE_DB_FILENAME = "state.db.enc"
+STATE_ENCRYPTION_MARKER = ".encrypt_state"
+UNENCRYPTED_WARNED_MARKER = ".warned_unencrypted_state"
 NETWORK_LOG_FILENAME = "network.log"
 RAW_NETWORK_LOG_FILENAME = "network.raw.log"
 
@@ -58,6 +61,33 @@ def get_raw_network_log_path() -> Path:
 def keep_raw_log_enabled() -> bool:
     """Read the env flag that opts in to keeping a raw, unredacted log."""
     return os.environ.get("PRIVACYWORM_KEEP_RAW_LOG", "").strip() in ("1", "true", "yes")
+
+
+def state_encryption_marker() -> Path:
+    """Path to the flag file that records "state.db should be encrypted"."""
+    return get_config_dir() / STATE_ENCRYPTION_MARKER
+
+
+def is_state_encryption_enabled() -> bool:
+    """True when the user opted into encrypting state.db at rest."""
+    return state_encryption_marker().exists()
+
+
+def enable_state_encryption() -> None:
+    """Drop the marker file that turns on state.db encryption from then on."""
+    state_encryption_marker().write_text("on\n", encoding="utf-8")
+
+
+def disable_state_encryption() -> None:
+    """Remove the marker; future runs will write a plaintext state.db."""
+    marker = state_encryption_marker()
+    if marker.exists():
+        marker.unlink()
+
+
+def unencrypted_warning_marker() -> Path:
+    """Path to the flag that records "we already warned about plaintext state"."""
+    return get_config_dir() / UNENCRYPTED_WARNED_MARKER
 
 
 def _redact_path(path: str) -> str:

@@ -11,10 +11,15 @@ import yaml
 from privacyworm import __version__
 from privacyworm.cli_helpers import load_profile as _load_profile
 from privacyworm.config import (
+    SOCIAL_TOKENS_FILENAME,
+    enable_state_encryption,
     get_config_dir,
     get_network_log_path,
     get_profile_path,
     get_raw_network_log_path,
+    get_state_db_path,
+    is_state_encryption_enabled,
+    unencrypted_warning_marker,
 )
 from privacyworm.mugshot.cli import mugshot as _mugshot_group
 from privacyworm.profile import (
@@ -44,8 +49,61 @@ def cli():
     pass
 
 
+def _warn_unencrypted_state_once() -> None:
+    """Print the one-time warning when state.db is not encrypted.
+
+    The warning only fires when the user has not already opted into
+    encryption and has not already seen the warning. After the first
+    time, a marker file in the config dir keeps us from nagging again.
+    """
+    if is_state_encryption_enabled():
+        return
+    marker = unencrypted_warning_marker()
+    if marker.exists():
+        return
+    click.echo(
+        "Note: state.db is unencrypted. It contains broker names and "
+        "listing URLs - not your full PII, but enough that a snoop could "
+        "tell which sites had your info. Run 'privacyworm init "
+        "--encrypt-state' to encrypt it from now on.",
+        err=True,
+    )
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("warned\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _open_state(passphrase: str | None = None) -> StateDB:
+    """Open StateDB with the right encryption mode for this install."""
+    if is_state_encryption_enabled():
+        if passphrase is None:
+            passphrase = getpass.getpass("Passphrase (for encrypted state.db): ")
+        return StateDB(passphrase=passphrase)
+    _warn_unencrypted_state_once()
+    return StateDB()
+
+
+def _load_profile_and_state() -> tuple[Profile, StateDB, str | None]:
+    """Decrypt the profile and open StateDB with the same passphrase."""
+    if is_state_encryption_enabled():
+        passphrase = getpass.getpass("Passphrase: ")
+        profile = _load_profile(passphrase)
+        db = StateDB(passphrase=passphrase)
+        return profile, db, passphrase
+    profile = _load_profile()
+    db = _open_state()
+    return profile, db, None
+
+
 @cli.command()
-def init():
+@click.option(
+    "--encrypt-state",
+    is_flag=True,
+    help="Also encrypt the local state database with the same passphrase.",
+)
+def init(encrypt_state):
     """Set up your profile (interactive, encrypted on disk)."""
     click.echo("Let's set up your profile. This info stays on your machine, encrypted.\n")
 
@@ -129,6 +187,22 @@ def init():
     path = get_profile_path(encrypted=True)
     encrypt_profile(profile, passphrase, path)
     click.echo(f"\nProfile encrypted and saved to {path}")
+
+    if encrypt_state:
+        enable_state_encryption()
+        click.echo(
+            "State database will be encrypted (state.db.enc) using the same "
+            "passphrase. Each command will prompt you for it."
+        )
+        # If a plaintext state.db is already on disk from a previous run,
+        # encrypt it now so we don't leave it lying around.
+        plaintext_db = get_state_db_path(encrypted=False)
+        encrypted_db = get_state_db_path(encrypted=True)
+        if plaintext_db.exists() and not encrypted_db.exists():
+            db = StateDB(passphrase=passphrase)
+            db.close()
+            click.echo("Existing state.db migrated to state.db.enc.")
+
     click.echo("You're all set. Run 'privacyworm scan' to see what the brokers have on you.")
 
 
@@ -137,8 +211,7 @@ def init():
 @click.option("--headed", is_flag=True, help="Open a visible browser window.")
 def scan(broker, headed):
     """Search data brokers for your listings."""
-    profile = _load_profile()
-    db = StateDB()
+    profile, db, _ = _load_profile_and_state()
 
     click.echo(f"Scanning {'all brokers' if not broker else broker}...\n")
     results = scan_all(profile, db, headed=headed, broker_name=broker)
@@ -177,8 +250,7 @@ def optout(dry_run, headed, broker, auto_confirm):
         "Do not use this tool to file requests on behalf of others without their consent.\n"
     )
 
-    profile = _load_profile()
-    db = StateDB()
+    profile, db, _ = _load_profile_and_state()
 
     if dry_run:
         click.echo("DRY RUN - nothing will actually be sent.\n")
@@ -205,7 +277,7 @@ def optout(dry_run, headed, broker, auto_confirm):
 @cli.command()
 def status():
     """Show current status of listings, opt-outs, and confirmations."""
-    db = StateDB()
+    db = _open_state()
     s = db.summary()
 
     click.echo("PrivacyWorm Status")
@@ -237,8 +309,7 @@ def status():
 @click.option("--headed", is_flag=True, help="Open a visible browser window.")
 def rescan(headed):
     """Re-check brokers that are due for a rescan."""
-    profile = _load_profile()
-    db = StateDB()
+    profile, db, _ = _load_profile_and_state()
 
     due = db.get_due_rescans()
     if not due:
@@ -264,8 +335,7 @@ def inbox():
 @inbox.command()
 def check():
     """Poll IMAP inbox for confirmation emails and process them."""
-    profile = _load_profile()
-    db = StateDB()
+    profile, db, _ = _load_profile_and_state()
 
     click.echo("Checking inbox for confirmation emails...\n")
     processed = check_inbox(profile, db)
@@ -277,6 +347,82 @@ def check():
             click.echo(f"  Confirmed: {p['broker']} (optout #{p['optout_id']})")
 
     db.close()
+
+
+@cli.command(name="purge-state")
+@click.option(
+    "--yes",
+    "confirmed",
+    is_flag=True,
+    help="Skip the interactive confirmation prompt.",
+)
+def purge_state(confirmed):
+    """Delete state.db (or state.db.enc), wiping local listing history.
+
+    This is destructive. Listings, opt-out records, and the rescan
+    schedule all go away. Your profile and tokens stay where they are.
+    """
+    plaintext = get_state_db_path(encrypted=False)
+    encrypted = get_state_db_path(encrypted=True)
+    targets = [p for p in (plaintext, encrypted) if p.exists()]
+    if not targets:
+        click.echo("No state database found - nothing to do.")
+        return
+    click.echo("This will delete:")
+    for t in targets:
+        click.echo(f"  - {t}")
+    if not confirmed:
+        if not click.confirm("Delete these files?", default=False):
+            click.echo("Aborted.")
+            return
+    for t in targets:
+        try:
+            t.unlink()
+            click.echo(f"Deleted {t}")
+        except OSError as e:
+            click.echo(f"Could not delete {t}: {e}", err=True)
+
+
+@cli.command(name="delete-profile")
+@click.option(
+    "--yes",
+    "confirmed",
+    is_flag=True,
+    help="Skip the interactive confirmation prompt.",
+)
+def delete_profile(confirmed):
+    """Delete the encrypted profile and any social tokens.
+
+    Big-deal command. Without the profile file, the tool has nothing to
+    scan with. The encrypted file is overwritten with random bytes
+    before unlinking so a forensic recovery is at least harder.
+    """
+    profile_path = get_profile_path(encrypted=True)
+    tokens_path = get_config_dir() / SOCIAL_TOKENS_FILENAME
+    targets = [p for p in (profile_path, tokens_path) if p.exists()]
+    if not targets:
+        click.echo("No profile or token files found - nothing to do.")
+        return
+    click.echo("WARNING: This deletes your profile and social tokens.")
+    click.echo("After this you will need to run 'privacyworm init' from scratch.")
+    click.echo("Files to remove:")
+    for t in targets:
+        click.echo(f"  - {t}")
+    if not confirmed:
+        if not click.confirm("Are you sure?", default=False):
+            click.echo("Aborted.")
+            return
+    import os as _os
+    for t in targets:
+        try:
+            size = t.stat().st_size
+            with open(t, "r+b") as f:
+                f.write(_os.urandom(size))
+                f.flush()
+            t.unlink()
+            click.echo(f"Deleted {t}")
+        except OSError as e:
+            click.echo(f"Could not delete {t}: {e}", err=True)
 
 
 @cli.command(name="export-audit")

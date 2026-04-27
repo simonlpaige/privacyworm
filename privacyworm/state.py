@@ -14,7 +14,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from privacyworm.config import get_state_db_path
+from privacyworm.config import (
+    get_state_db_path,
+    is_state_encryption_enabled,
+)
+from privacyworm.profile import decrypt_bytes, encrypt_bytes
 
 logger = logging.getLogger("privacyworm")
 
@@ -49,13 +53,100 @@ CREATE TABLE IF NOT EXISTS rescans (
 );
 """
 
-VALID_LISTING_STATUSES = {"found", "opt_out_filed", "opt_out_confirmed", "removed", "re_listed"}
+# The listing state machine. New listings start at ``found`` (compat
+# with v1) or ``candidate_found`` (when scoring marks them lower
+# confidence). The user sees the listing during ``privacyworm review``
+# and either approves or rejects. After approval the opt-out flow runs
+# and the status walks through optout_submitted, confirmation_needed,
+# confirmation_clicked, removal_pending, and finally removed. ``failed``
+# and ``manual_required`` cover broken flows; ``reappeared`` is what we
+# set when a rescan finds a previously-removed listing again.
+#
+# Valid transitions (enforced by the comment, not by the database):
+#   found / candidate_found -> needs_review / approved / rejected / failed / manual_required
+#   needs_review            -> approved / rejected
+#   approved                -> optout_submitted / failed
+#   optout_submitted        -> confirmation_needed / removal_pending / failed
+#   confirmation_needed     -> confirmation_clicked / failed
+#   confirmation_clicked    -> removal_pending
+#   removal_pending         -> removed / failed
+#   removed                 -> reappeared
+#   reappeared              -> needs_review (back into the loop)
+#
+# v1 statuses (found, opt_out_filed, opt_out_confirmed, re_listed) are
+# kept in the set so older databases still validate.
+VALID_LISTING_STATUSES = {
+    "found",
+    "candidate_found",
+    "needs_review",
+    "approved",
+    "rejected",
+    "optout_submitted",
+    "confirmation_needed",
+    "confirmation_clicked",
+    "removal_pending",
+    "removed",
+    "failed",
+    "reappeared",
+    "manual_required",
+    # legacy v1 statuses, kept so older state.db files keep validating
+    "opt_out_filed",
+    "opt_out_confirmed",
+    "re_listed",
+}
 VALID_OPTOUT_STATUSES = {"pending", "confirmed", "failed", "expired"}
 
 
 class StateDB:
-    def __init__(self, db_path: Path | None = None):
-        self.db_path = db_path or get_state_db_path()
+    """SQLite store for listings, opt-outs, and the rescan schedule.
+
+    Two on-disk modes:
+
+    - Plaintext (default): state.db is a regular SQLite file. Easy to
+      inspect with the sqlite3 CLI from outside the tool.
+    - Encrypted (opt-in via ``privacyworm init --encrypt-state``):
+      state.db.enc holds a Fernet ciphertext of the SQLite bytes.
+      On open, we decrypt to ``state.db`` next to it and connect there.
+      On close, we re-encrypt and delete the working file.
+
+      The trade-off is that during an active session, the plaintext
+      working file briefly exists on disk. This is documented in
+      SECURITY.md.
+    """
+
+    def __init__(
+        self,
+        db_path: Path | None = None,
+        *,
+        passphrase: str | None = None,
+        encrypted: bool | None = None,
+    ):
+        # Auto-detect mode only when the caller did not pass an explicit
+        # path. Tests pass in a temp file, and they should never trigger
+        # the encrypted-blob lookup.
+        if encrypted is None:
+            encrypted = is_state_encryption_enabled() if db_path is None else False
+
+        self.encrypted = encrypted
+        self.passphrase = passphrase
+        self.encrypted_path: Path | None = None
+
+        if encrypted:
+            if not passphrase:
+                raise ValueError(
+                    "Encrypted state.db requires a passphrase. "
+                    "Pass passphrase= to StateDB or run "
+                    "'privacyworm init --encrypt-state' to disable."
+                )
+            self.encrypted_path = get_state_db_path(encrypted=True)
+            self.db_path = get_state_db_path(encrypted=False)
+            if self.encrypted_path.exists():
+                blob = self.encrypted_path.read_bytes()
+                plaintext = decrypt_bytes(blob, passphrase)
+                self.db_path.write_bytes(plaintext)
+        else:
+            self.db_path = db_path or get_state_db_path()
+
         self.conn = sqlite3.connect(str(self.db_path))
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
@@ -141,6 +232,14 @@ class StateDB:
 
     def close(self) -> None:
         self.conn.close()
+        if self.encrypted and self.encrypted_path is not None:
+            plaintext = self.db_path.read_bytes()
+            blob = encrypt_bytes(plaintext, self.passphrase or "")
+            self.encrypted_path.write_bytes(blob)
+            try:
+                self.db_path.unlink()
+            except OSError:
+                pass
 
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat()
