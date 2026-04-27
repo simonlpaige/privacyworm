@@ -4,7 +4,12 @@ import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 
-from privacyworm.config import get_network_log_path, scrub_pii
+from privacyworm.config import (
+    get_network_log_path,
+    get_raw_network_log_path,
+    keep_raw_log_enabled,
+    scrub_pii,
+)
 from privacyworm.playbook import Playbook
 from privacyworm.profile import Profile
 
@@ -12,18 +17,28 @@ logger = logging.getLogger("privacyworm")
 
 
 def log_network_request(method: str, url: str, details: str = "") -> None:
-    """Append a line to the network log so users can audit every request.
+    """Append a line to the network audit log.
 
-    Query strings are stripped before writing; the auditable info is the
-    domain and path, not the search parameters that carry the user's name.
+    The default log at ``network.log`` is redacted: name-shaped path
+    segments and any query string are replaced before writing. Sharing
+    this file with a friend should not leak your name or city.
+
+    Setting ``PRIVACYWORM_KEEP_RAW_LOG=1`` also writes the original URL
+    to ``network.raw.log`` for debugging. ``privacyworm export-audit
+    --include-sensitive`` reads from there when it exists.
     """
     timestamp = datetime.now(timezone.utc).isoformat()
     safe_url = scrub_pii(url)
-    line = f"{timestamp} {method} {safe_url} {details}\n"
+
     log_path = get_network_log_path()
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with open(log_path, "a") as f:
-        f.write(line)
+        f.write(f"{timestamp} {method} {safe_url} {details}\n")
+
+    if keep_raw_log_enabled():
+        raw_path = get_raw_network_log_path()
+        with open(raw_path, "a") as f:
+            f.write(f"{timestamp} {method} {url} {details}\n")
 
 
 class BaseBroker(ABC):
@@ -36,12 +51,11 @@ class BaseBroker(ABC):
     def scan(self) -> list[dict]:
         """Search the broker for listings matching the profile.
 
-        Returns a list of dicts, each with at least:
+        Returns a list of dicts. Each dict carries at least:
             - listing_url: str or None
-            - matched_name: str
-            - matched_city: str or None
-            - matched_state: str or None
-            - raw_snippet: str or None
+            - extracted: dict of fields scraped from the listing card
+              (full_name, age, city_state, relatives, etc.)
+            - text: str of the joined visible text, used for scoring
         """
         ...
 

@@ -3,13 +3,19 @@
 import getpass
 import logging
 import sys
+from pathlib import Path
 
 import click
 import yaml
 
 from privacyworm import __version__
 from privacyworm.cli_helpers import load_profile as _load_profile
-from privacyworm.config import get_config_dir, get_profile_path
+from privacyworm.config import (
+    get_config_dir,
+    get_network_log_path,
+    get_profile_path,
+    get_raw_network_log_path,
+)
 from privacyworm.mugshot.cli import mugshot as _mugshot_group
 from privacyworm.profile import (
     Address,
@@ -271,6 +277,48 @@ def check():
             click.echo(f"  Confirmed: {p['broker']} (optout #{p['optout_id']})")
 
     db.close()
+
+
+@cli.command(name="export-audit")
+@click.option(
+    "--include-sensitive",
+    is_flag=True,
+    help="Print the raw, unredacted log instead of the audit-safe version.",
+)
+@click.option(
+    "--out",
+    type=click.Path(dir_okay=False, writable=True),
+    default=None,
+    help="Write to this file instead of stdout.",
+)
+def export_audit(include_sensitive, out):
+    """Print the network audit log.
+
+    The default reads ~/.privacyworm/network.log, which has names and
+    query strings redacted and is safe to share. Pass --include-sensitive
+    to read the raw log at ~/.privacyworm/network.raw.log, which only
+    exists when PRIVACYWORM_KEEP_RAW_LOG=1 was set during the runs.
+    """
+    if include_sensitive:
+        path = get_raw_network_log_path()
+        if not path.exists():
+            click.echo(
+                "No raw log found. Set PRIVACYWORM_KEEP_RAW_LOG=1 before running "
+                "scan or optout to keep an unredacted log."
+            )
+            raise SystemExit(1)
+    else:
+        path = get_network_log_path()
+        if not path.exists():
+            click.echo("No audit log yet. Run a scan or opt-out first.")
+            raise SystemExit(1)
+
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if out:
+        Path(out).write_text(text, encoding="utf-8")
+        click.echo(f"Wrote {len(text)} bytes to {out}")
+    else:
+        click.echo(text, nl=False)
 
 
 cli.add_command(_social_group)
