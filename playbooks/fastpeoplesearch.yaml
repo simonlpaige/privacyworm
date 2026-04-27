@@ -28,8 +28,15 @@ opt_out:
   confirmation_subject_contains: "FastPeopleSearch Removal"
 
 rescan_days: 90
-legal_basis: "FastPeopleSearch voluntary removal"
-
+legal_basis:
+  default: "FastPeopleSearch voluntary removal request"
+  CA: "California Delete Act / CCPA Section 1798.105 deletion request"
+  CO: "Colorado Privacy Act deletion request"
+  CT: "Connecticut Data Privacy Act deletion request"
+  TX: "Texas Data Privacy and Security Act / Data Broker Act deletion request"
+  OR: "Oregon Consumer Privacy Act / data broker registry deletion request"
+  VA: "Virginia Consumer Data Protection Act deletion request"
+  MT: "Montana Consumer Data Privacy Act deletion request"
 verification:
   verified_at: "2026-04-27"
   verified_by: "@simonlpaige"

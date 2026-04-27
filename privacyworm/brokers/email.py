@@ -6,7 +6,7 @@ from email.mime.text import MIMEText
 from string import Template
 
 from privacyworm.brokers.base import BaseBroker, log_network_request
-from privacyworm.playbook import Playbook
+from privacyworm.playbook import Playbook, resolve_legal_basis
 from privacyworm.profile import Profile
 
 logger = logging.getLogger("privacyworm")
@@ -111,6 +111,13 @@ class EmailBroker(BaseBroker):
         return matched
 
     def _build_email_body(self, listing: dict) -> str:
+        state_code = (
+            self.profile.addresses[0].state if self.profile.addresses else None
+        )
+        legal_basis = resolve_legal_basis(self.playbook, state_code) or (
+            "Voluntary deletion request"
+        )
+
         opt = self.playbook.opt_out
         if opt.email_body_template:
             return Template(opt.email_body_template).safe_substitute(
@@ -119,16 +126,17 @@ class EmailBroker(BaseBroker):
                 email=self.profile.emails[0] if self.profile.emails else "",
                 listing_url=listing.get("listing_url", ""),
                 full_name=f"{self.profile.name.first} {self.profile.name.last}",
+                legal_basis=legal_basis,
             )
 
         listing_url = listing.get("listing_url", "N/A")
         return (
             f"To whom it may concern,\n\n"
             f"I am writing to request the removal of my personal information "
-            f"from your website.\n\n"
+            f"from your website. This request is made under: {legal_basis}.\n\n"
             f"Name: {self.profile.name.first} {self.profile.name.last}\n"
             f"Listing URL: {listing_url}\n"
             f"Email: {self.profile.emails[0] if self.profile.emails else 'N/A'}\n\n"
-            f"Please remove this listing and confirm the removal.\n\n"
+            f"Please remove this listing and confirm the removal in writing.\n\n"
             f"Thank you."
         )
