@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 DEFAULT_CONFIG_DIR = Path.home() / ".privacyworm"
 PROFILE_FILENAME = "profile.yaml"
@@ -31,3 +32,21 @@ def get_state_db_path() -> Path:
 def get_network_log_path() -> Path:
     """Return path to the network request log."""
     return get_config_dir() / NETWORK_LOG_FILENAME
+
+
+def scrub_pii(url: str) -> str:
+    """Strip query strings and fragments from a URL before logging.
+
+    We log domains and paths for auditing, but strip query strings since
+    they can contain names, phone numbers, and addresses. Fragments get
+    dropped for the same reason.
+    """
+    if not url:
+        return url
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return url
+    if not parts.scheme and not parts.netloc:
+        return url
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))

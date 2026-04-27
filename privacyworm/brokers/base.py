@@ -4,7 +4,7 @@ import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 
-from privacyworm.config import get_network_log_path
+from privacyworm.config import get_network_log_path, scrub_pii
 from privacyworm.playbook import Playbook
 from privacyworm.profile import Profile
 
@@ -12,9 +12,14 @@ logger = logging.getLogger("privacyworm")
 
 
 def log_network_request(method: str, url: str, details: str = "") -> None:
-    """Append a line to the network log so users can audit every request."""
+    """Append a line to the network log so users can audit every request.
+
+    Query strings are stripped before writing; the auditable info is the
+    domain and path, not the search parameters that carry the user's name.
+    """
     timestamp = datetime.now(timezone.utc).isoformat()
-    line = f"{timestamp} {method} {url} {details}\n"
+    safe_url = scrub_pii(url)
+    line = f"{timestamp} {method} {safe_url} {details}\n"
     log_path = get_network_log_path()
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with open(log_path, "a") as f:
