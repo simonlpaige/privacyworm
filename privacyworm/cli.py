@@ -208,12 +208,41 @@ def init(encrypt_state):
     click.echo("You're all set. Run 'privacyworm scan' to see what the brokers have on you.")
 
 
+DROP_REMINDER = (
+    "You're in California. The state's DROP system (drop.oag.ca.gov)\n"
+    "lets you send one deletion request to 500+ registered brokers. It\n"
+    "started accepting requests on January 1, 2026 and the brokers must\n"
+    "process them by August 1, 2026. PrivacyWorm handles the brokers\n"
+    "outside that system and keeps evidence per request. Consider\n"
+    "running DROP first.\n"
+    "Pass --skip-drop-reminder to silence this."
+)
+
+
+def _maybe_drop_reminder(profile, skip: bool) -> None:
+    """Print the DROP reminder once per command invocation when applicable."""
+    if skip:
+        return
+    if not profile.addresses:
+        return
+    state = (profile.addresses[0].state or "").upper()
+    if state == "CA":
+        click.echo(DROP_REMINDER, err=True)
+        click.echo("", err=True)
+
+
 @cli.command()
 @click.option("--broker", default=None, help="Scan a single broker by name.")
 @click.option("--headed", is_flag=True, help="Open a visible browser window.")
-def scan(broker, headed):
+@click.option(
+    "--skip-drop-reminder",
+    is_flag=True,
+    help="Don't print the California DROP reminder.",
+)
+def scan(broker, headed, skip_drop_reminder):
     """Search data brokers for your listings."""
     profile, db, _ = _load_profile_and_state()
+    _maybe_drop_reminder(profile, skip_drop_reminder)
 
     click.echo(f"Scanning {'all brokers' if not broker else broker}...\n")
     results = scan_all(profile, db, headed=headed, broker_name=broker)
@@ -281,7 +310,12 @@ def review(broker):
     is_flag=True,
     help="Only file opt-outs for listings already approved with 'privacyworm review'.",
 )
-def optout(dry_run, headed, broker, auto_confirm, approved_only):
+@click.option(
+    "--skip-drop-reminder",
+    is_flag=True,
+    help="Don't print the California DROP reminder.",
+)
+def optout(dry_run, headed, broker, auto_confirm, approved_only, skip_drop_reminder):
     """File opt-out requests for found listings."""
     click.echo(
         "By proceeding, you confirm these are opt-out requests for your own information.\n"
@@ -289,6 +323,7 @@ def optout(dry_run, headed, broker, auto_confirm, approved_only):
     )
 
     profile, db, _ = _load_profile_and_state()
+    _maybe_drop_reminder(profile, skip_drop_reminder)
 
     if dry_run:
         click.echo("DRY RUN - nothing will actually be sent.\n")
@@ -392,6 +427,40 @@ def check():
             click.echo(f"  Confirmed: {p['broker']} (optout #{p['optout_id']})")
 
     db.close()
+
+
+@cli.command()
+def registries():
+    """List the official state data-broker registries.
+
+    These are state-run systems where data brokers must register and
+    where consumers can sometimes file mass deletion requests. They are
+    not run by PrivacyWorm; the tool just points you at them.
+    """
+    entries = [
+        ("California (DROP)",
+         "drop.oag.ca.gov",
+         "One request reaches 500+ brokers registered with the state. "
+         "Live since 2026-01-01; brokers must process by 2026-08-01."),
+        ("Texas",
+         "sos.state.tx.us (search 'data broker registration')",
+         "Texas Secretary of State data broker registry."),
+        ("Oregon",
+         "justice.oregon.gov/databrokers",
+         "Oregon Data Broker Registry, run by the state DOJ."),
+        ("Vermont",
+         "sec.state.vt.us/businesses/data-brokers",
+         "Vermont's data broker registry, the first US registry."),
+    ]
+    click.echo("Official state data-broker registries:\n")
+    for name, url, blurb in entries:
+        click.echo(f"  {name}")
+        click.echo(f"    {url}")
+        click.echo(f"    {blurb}\n")
+    click.echo(
+        "PrivacyWorm covers brokers outside these registries and keeps\n"
+        "per-request evidence. Use the registry first when you're eligible."
+    )
 
 
 @cli.command(name="purge-state")
