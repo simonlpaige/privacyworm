@@ -16,16 +16,12 @@ from pathlib import Path
 
 import click
 
-from privacyworm.cli_helpers import load_profile
-from privacyworm.playbook import get_playbook, load_all_playbooks
+from privacyworm.cli_helpers import load_profile, load_profile_and_state
+from privacyworm.playbook import MUGSHOT_PLAYBOOKS_DIR, get_playbook, load_all_playbooks
 from privacyworm.runner import file_optouts, scan_all
-from privacyworm.state import StateDB
 
 logger = logging.getLogger("privacyworm")
 
-MUGSHOT_PLAYBOOKS_DIR = (
-    Path(__file__).parent.parent.parent / "playbooks" / "mugshots"
-)
 
 
 @click.group(name="mugshot")
@@ -38,8 +34,7 @@ def mugshot():
 @click.option("--headed", is_flag=True, help="Open a visible browser window.")
 def scan(site, headed):
     """Search known mugshot sites for your name."""
-    profile = load_profile()
-    db = StateDB()
+    profile, db, _ = load_profile_and_state()
     click.echo(f"Scanning {'all mugshot sites' if not site else site}...\n")
     results = scan_all(
         profile,
@@ -79,8 +74,7 @@ def optout(site, headed, dry_run, auto_confirm):
         "By proceeding, you confirm these are removal requests for your own information.\n"
         "Do not use this tool to file requests on behalf of others without their consent.\n"
     )
-    profile = load_profile()
-    db = StateDB()
+    profile, db, _ = load_profile_and_state()
     if dry_run:
         click.echo("DRY RUN - nothing will actually be sent.\n")
     outcomes = file_optouts(

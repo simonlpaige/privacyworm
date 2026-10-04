@@ -12,3 +12,5 @@ venv/
 env/
 *.enc
 *.db
+.coverage
+*.whl

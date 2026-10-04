@@ -11,7 +11,7 @@ from typing import Optional
 import yaml
 from pydantic import BaseModel
 
-SOCIAL_PLAYBOOKS_DIR = Path(__file__).parent.parent.parent / "playbooks" / "social"
+from privacyworm.playbook import SOCIAL_PLAYBOOKS_DIR
 
 
 class SocialPlaybook(BaseModel):

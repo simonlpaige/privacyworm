@@ -20,7 +20,9 @@ class ImapInbox(BaseInbox):
         self.host = config.host
         self.port = config.port
         self.user = config.user
-        self.password = os.environ.get(config.pass_env, "")
+        # The env var wins so power users can keep secrets out of the
+        # profile; otherwise use the app password saved (encrypted) in it.
+        self.password = os.environ.get(config.pass_env, "") or (config.password or "")
 
     def check_confirmations(self, subject_contains: str) -> list[dict]:
         """Search IMAP INBOX for unread messages matching the subject.
@@ -96,19 +98,16 @@ class ImapInbox(BaseInbox):
 
     def click_confirmation_link(self, url: str) -> bool:
         """Visit a confirmation URL using Playwright."""
-        from playwright.sync_api import sync_playwright
+        from privacyworm.browser import open_browser
 
         log_network_request("GET", url, "confirmation link click")
         logger.info(f"Clicking confirmation link: {url}")
 
         try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                page = browser.new_page()
+            with open_browser(headless=True) as (_browser, page):
                 page.goto(url, wait_until="domcontentloaded", timeout=15_000)
                 # Most confirmation pages just need to be loaded
                 page.wait_for_timeout(2000)
-                browser.close()
             return True
         except Exception as e:
             logger.error(f"Failed to click confirmation link: {e}")

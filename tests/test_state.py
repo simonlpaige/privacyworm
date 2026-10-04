@@ -1,6 +1,7 @@
 """Tests for SQLite state management."""
 
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -91,7 +92,10 @@ def test_duplicate_listing_ignored(db: StateDB):
 
 
 def test_rescan_scheduling(db: StateDB):
-    db.set_rescan("spokeo", "2026-07-22T00:00:00+00:00")
+    # Relative date: a hard-coded "future" date eventually becomes the past
+    # and the test starts failing on its own (it did, in mid-2026).
+    future = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+    db.set_rescan("spokeo", future)
     due = db.get_due_rescans()
     assert len(due) == 0  # future date, not due yet
 

@@ -7,8 +7,8 @@ from pathlib import Path
 
 import click
 
-from privacyworm import __version__
-from privacyworm.cli_helpers import load_profile as _load_profile
+from privacyworm import __version__, desktop, ui
+from privacyworm.cli_helpers import unlock_profile
 from privacyworm.config import (
     SOCIAL_TOKENS_FILENAME,
     enable_state_encryption,
@@ -24,9 +24,6 @@ from privacyworm.extract import extract_listings_from_html
 from privacyworm.mugshot.cli import mugshot as _mugshot_group
 from privacyworm.playbook import load_all_playbooks
 from privacyworm.profile import (
-    Address,
-    InboxConfig,
-    Name,
     Profile,
     encrypt_profile,
 )
@@ -42,11 +39,39 @@ logging.basicConfig(
 logger = logging.getLogger("privacyworm")
 
 
-@click.group()
+@click.group(invoke_without_command=True)
 @click.version_option(__version__)
-def cli():
-    """PrivacyWorm - find your data-broker listings and opt out."""
-    pass
+@click.option("--reminder", is_flag=True, hidden=True, help="Opened by the daily reminder.")
+@click.pass_context
+def cli(ctx, reminder):
+    """PrivacyWorm - find your data-broker listings and opt out.
+
+    Run it with no command for the guided mode (recommended). The
+    commands below are for scripting and power users.
+    """
+    if ctx.invoked_subcommand is None:
+        from privacyworm.wizard import run
+
+        run(reminder=reminder)
+
+
+def main() -> None:
+    """Console entry point."""
+    if sys.platform == "win32":
+        try:
+            import colorama
+
+            colorama.just_fix_windows_console()
+        except ImportError:
+            pass
+    # Never crash on a console that can't print the odd ✓ (old Windows
+    # code pages, output redirected to a file).
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")  # type: ignore[union-attr,attr-defined,unused-ignore]
+        except (AttributeError, ValueError):
+            pass
+    cli()
 
 
 def _warn_unencrypted_state_once() -> None:
@@ -87,14 +112,10 @@ def _open_state(passphrase: str | None = None) -> StateDB:
 
 def _load_profile_and_state() -> tuple[Profile, StateDB, str | None]:
     """Decrypt the profile and open StateDB with the same passphrase."""
+    profile, passphrase = unlock_profile()
     if is_state_encryption_enabled():
-        passphrase = getpass.getpass("Passphrase: ")
-        profile = _load_profile(passphrase)
-        db = StateDB(passphrase=passphrase)
-        return profile, db, passphrase
-    profile = _load_profile()
-    db = _open_state()
-    return profile, db, None
+        return profile, StateDB(passphrase=passphrase), passphrase
+    return profile, _open_state(), passphrase
 
 
 @cli.command()
@@ -105,84 +126,18 @@ def _load_profile_and_state() -> tuple[Profile, StateDB, str | None]:
 )
 def init(encrypt_state):
     """Set up your profile (interactive, encrypted on disk)."""
-    click.echo("Let's set up your profile. This info stays on your machine, encrypted.\n")
+    from privacyworm.profile_setup import ask_new_passphrase, interview
 
-    first = click.prompt("First name")
-    last = click.prompt("Last name")
-    middle = click.prompt("Middle name/initial (blank to skip)", default="", show_default=False)
-
-    name = Name(first=first, last=last, middle=middle or None)
-
-    aliases = []
-    click.echo("\nAliases (other names brokers might list you under). Blank line to stop.")
-    while True:
-        alias = click.prompt("Alias", default="", show_default=False)
-        if not alias:
-            break
-        aliases.append(alias)
-
-    addresses = []
-    click.echo("\nAddresses (current and past). Blank street to stop.")
-    while True:
-        street = click.prompt("Street address", default="", show_default=False)
-        if not street:
-            break
-        city = click.prompt("City")
-        state = click.prompt("State (2-letter)")
-        zip_code = click.prompt("ZIP")
-        addresses.append(Address(street=street, city=city, state=state, zip=zip_code))
-
-    dob = click.prompt("\nDate of birth (YYYY-MM-DD, blank to skip)", default="", show_default=False)
-
-    phones = []
-    click.echo("\nPhone numbers. Blank to stop.")
-    while True:
-        phone = click.prompt("Phone", default="", show_default=False)
-        if not phone:
-            break
-        phones.append(phone)
-
-    emails = []
-    click.echo("\nEmail addresses. Blank to stop.")
-    while True:
-        em = click.prompt("Email", default="", show_default=False)
-        if not em:
-            break
-        emails.append(em)
-
-    relatives = []
-    click.echo("\nRelatives (helps avoid false positives). Blank to stop.")
-    while True:
-        rel = click.prompt("Relative name", default="", show_default=False)
-        if not rel:
-            break
-        relatives.append(rel)
-
-    inbox = None
-    if click.confirm("\nSet up email inbox for confirmation tracking?", default=False):
-        host = click.prompt("IMAP host", default="imap.gmail.com")
-        port = click.prompt("IMAP port", default=993, type=int)
-        user = click.prompt("IMAP username (email)")
-        pass_env = click.prompt("Env var name for IMAP password", default="PRIVACYWORM_INBOX_PASS")
-        inbox = InboxConfig(host=host, port=port, user=user, pass_env=pass_env)
-
-    profile = Profile(
-        name=name,
-        aliases=aliases,
-        addresses=addresses,
-        dob=dob or None,
-        phones=phones,
-        emails=emails,
-        relatives=relatives,
-        inbox=inbox,
-    )
-
+    path = get_profile_path(encrypted=True)
+    if path.exists() and not click.confirm(
+        "You already have a profile. Replace it with a new one?", default=False
+    ):
+        click.echo("Kept your existing profile. To change it, run 'privacyworm' and choose 'Edit my info'.")
+        return
+    click.echo("Let's set up your profile. This info stays on your machine, encrypted.")
+    profile = interview()
     click.echo("")
-    passphrase = getpass.getpass("Choose a passphrase to encrypt your profile: ")
-    confirm = getpass.getpass("Confirm passphrase: ")
-    if passphrase != confirm:
-        click.echo("Passphrases don't match. Try again.")
-        raise SystemExit(1)
+    passphrase = ask_new_passphrase()
 
     path = get_profile_path(encrypted=True)
     encrypt_profile(profile, passphrase, path)
@@ -203,7 +158,7 @@ def init(encrypt_state):
             db.close()
             click.echo("Existing state.db migrated to state.db.enc.")
 
-    click.echo("You're all set. Run 'privacyworm scan' to see what the brokers have on you.")
+    click.echo("You're all set. Run 'privacyworm' for a guided check-up, or 'privacyworm scan'.")
 
 
 DROP_REMINDER = (
@@ -313,7 +268,15 @@ def review(broker):
     is_flag=True,
     help="Don't print the California DROP reminder.",
 )
-def optout(dry_run, headed, broker, auto_confirm, approved_only, skip_drop_reminder):
+@click.option(
+    "--assist/--no-assist",
+    default=None,
+    help=(
+        "Open each form in a visible window pre-filled and let you click Submit "
+        "(default when run in a terminal), or submit automatically."
+    ),
+)
+def optout(dry_run, headed, broker, auto_confirm, approved_only, skip_drop_reminder, assist):
     """File opt-out requests for found listings."""
     click.echo(
         "By proceeding, you confirm these are opt-out requests for your own information.\n"
@@ -326,6 +289,8 @@ def optout(dry_run, headed, broker, auto_confirm, approved_only, skip_drop_remin
     if dry_run:
         click.echo("DRY RUN - nothing will actually be sent.\n")
 
+    if assist is None:
+        assist = ui.interactive() and not auto_confirm and not dry_run
     outcomes = file_optouts(
         profile,
         db,
@@ -334,6 +299,7 @@ def optout(dry_run, headed, broker, auto_confirm, approved_only, skip_drop_remin
         broker_name=broker,
         auto_confirm=auto_confirm,
         approved_only=approved_only,
+        assist=_assist_callback() if assist else None,
     )
 
     if not outcomes:
@@ -350,6 +316,12 @@ def optout(dry_run, headed, broker, auto_confirm, approved_only, skip_drop_remin
             click.echo(f"  [{status}] {o['broker']} (listing #{o['listing_id']}): {o['details']}")
 
     db.close()
+
+
+def _assist_callback():
+    from privacyworm.wizard import _assist
+
+    return _assist
 
 
 @cli.command()
@@ -444,14 +416,8 @@ def check(auto_confirm_inbox):
     db.close()
 
 
-@cli.command()
-def registries():
-    """List the official state data-broker registries.
-
-    These are state-run systems where data brokers must register and
-    where consumers can sometimes file mass deletion requests. They are
-    not run by PrivacyWorm; the tool just points you at them.
-    """
+def print_registries() -> None:
+    """Print the official state data-broker registries."""
     entries = [
         ("California (DROP)",
          "drop.oag.ca.gov",
@@ -476,6 +442,17 @@ def registries():
         "PrivacyWorm covers brokers outside these registries and keeps\n"
         "per-request evidence. Use the registry first when you're eligible."
     )
+
+
+@cli.command()
+def registries():
+    """List the official state data-broker registries.
+
+    These are state-run systems where data brokers must register and
+    where consumers can sometimes file mass deletion requests. They are
+    not run by PrivacyWorm; the tool just points you at them.
+    """
+    print_registries()
 
 
 @cli.command(name="purge-state")
@@ -666,9 +643,138 @@ def export_audit(include_sensitive, out):
         click.echo(text, nl=False)
 
 
+INSTALL_SH = "https://raw.githubusercontent.com/simonlpaige/privacyworm/main/install.sh"
+INSTALL_PS1 = "https://raw.githubusercontent.com/simonlpaige/privacyworm/main/install.ps1"
+
+
+def _install_command() -> str:
+    if desktop.platform() == "windows":
+        return f'powershell -ExecutionPolicy Bypass -c "irm {INSTALL_PS1} | iex"'
+    return f"curl -fsSL {INSTALL_SH} | sh"
+
+
+@cli.command()
+def checkup():
+    """Guided check-up: search, review, and remove - all in one go."""
+    from privacyworm.wizard import Session
+    from privacyworm.wizard import checkup as run_checkup
+
+    logging.getLogger("privacyworm").setLevel(logging.WARNING)
+    profile, db, passphrase = _load_profile_and_state()
+    session = Session(profile, passphrase or "", db)
+    try:
+        run_checkup(session)
+    finally:
+        session.close()
+
+
+@cli.command()
+@click.option("--no-shortcut", is_flag=True, help="Don't add PrivacyWorm to the app menu.")
+@click.option("--no-browser", is_flag=True, help="Skip the browser check/download.")
+def setup(no_shortcut, no_browser):
+    """Finish installing: check the browser and add an app-menu shortcut.
+
+    The installers run this for you. It's safe to run again any time.
+    """
+    from privacyworm.browser import ensure_browser
+
+    ok = True
+    if not no_browser:
+        ok = ensure_browser(echo=lambda m: click.echo(f"  {m}"))
+    if not no_shortcut:
+        try:
+            msg = desktop.create_shortcut()
+            if msg:
+                click.echo(f"  {msg}")
+        except OSError as e:
+            click.echo(f"  Couldn't add a shortcut ({e}). You can still type 'privacyworm'.")
+    if not ok:
+        raise SystemExit(1)
+
+
+@cli.command()
+def doctor():
+    """Check that everything PrivacyWorm needs is working."""
+    from privacyworm.browser import ensure_browser
+
+    click.echo(f"PrivacyWorm {__version__} on Python {sys.version.split()[0]} ({desktop.platform()})")
+    pbs = load_all_playbooks()
+    click.echo(f"  Broker playbooks: {len(pbs)} loaded")
+    if not pbs:
+        click.echo("  ! No playbooks found - reinstall with: " + _install_command())
+    profile = get_profile_path(encrypted=True)
+    click.echo(f"  Profile: {'set up' if profile.exists() else 'not set up yet (run privacyworm)'}")
+    click.echo(f"  Data folder: {get_config_dir()}")
+    click.echo(f"  Reminders: {'on' if desktop.reminders_enabled() else 'off'}")
+    if not ensure_browser(echo=lambda m: click.echo(f"  {m}")):
+        raise SystemExit(1)
+    click.echo("All good.")
+
+
+@cli.command()
+@click.argument("action", required=False, type=click.Choice(["on", "off", "status"]))
+def reminders(action):
+    """Turn check-up reminders on or off (privacyworm reminders on|off)."""
+    if action == "on":
+        ok, msg = desktop.enable_reminders()
+        click.echo(msg)
+        if not ok:
+            raise SystemExit(1)
+    elif action == "off":
+        _, msg = desktop.disable_reminders()
+        click.echo(msg)
+    else:
+        on = desktop.reminders_enabled()
+        due = desktop.next_due()
+        click.echo(f"Reminders are {'on' if on else 'off'}.")
+        if due:
+            click.echo(f"Next check-up due: {due.astimezone().strftime('%b %d, %Y').replace(' 0', ' ')}")
+        if not on:
+            click.echo("Turn them on with: privacyworm reminders on")
+
+
+@cli.command(hidden=True)
+@click.option("--force", is_flag=True, help="Remind even if nothing is due.")
+def remind(force):
+    """Run by the OS scheduler. Opens PrivacyWorm when a check-up is due."""
+    click.echo(desktop.remind(force=force))
+
+
+@cli.command()
+def update():
+    """How to update PrivacyWorm to the latest version."""
+    click.echo("Run the installer again - it updates in place and keeps your data:")
+    click.echo(f"  {_install_command()}")
+
+
+@cli.command()
+@click.option("--keep-data", is_flag=True, help="Keep your encrypted profile and history.")
+def uninstall(keep_data):
+    """Remove reminders, shortcuts and (optionally) your data, then the app."""
+    click.echo("This removes PrivacyWorm's reminders and app-menu shortcut.")
+    if not keep_data:
+        click.echo(f"It also deletes your saved info and history in {get_config_dir()}.")
+    if not click.confirm("Go ahead?", default=False):
+        click.echo("Nothing changed.")
+        return
+    desktop.disable_reminders()
+    desktop.remove_shortcut()
+    if not keep_data:
+        import os as _os
+        import shutil as _shutil
+
+        p = get_profile_path(encrypted=True)
+        if p.exists():
+            p.write_bytes(_os.urandom(p.stat().st_size))
+        _shutil.rmtree(get_config_dir(), ignore_errors=True)
+    click.echo("Done. To remove the program itself, run:")
+    click.echo("  uv tool uninstall privacyworm")
+    click.echo("(or 'pip uninstall privacyworm' if you installed it with pip)")
+
+
 cli.add_command(_social_group)
 cli.add_command(_mugshot_group)
 
 
 if __name__ == "__main__":
-    cli()
+    main()

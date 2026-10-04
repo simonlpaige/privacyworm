@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "privacyworm"
-version = "1.0.0"
+version = "1.1.0"
 description = "An agent that finds your listings on data-broker sites and files opt-out requests. Runs on your machine - your PII never touches a third-party server."
 readme = "README.md"
 license = "MIT"
@@ -30,6 +30,10 @@ dependencies = [
     "argon2-cffi>=23.1",
     "tldextract>=5.0",
     "requests>=2.31",
+    # Colour + ✓ marks on the classic Windows console.
+    "colorama>=0.4.6; sys_platform == 'win32'",
+    # Used by `test-playbooks` and the extract layer; small and pure-Python.
+    "beautifulsoup4>=4.12",
 ]
 
 [project.optional-dependencies]
@@ -92,7 +96,24 @@ skips = ["B101"]
 exclude_dirs = ["tests"]
 
 [project.scripts]
-privacyworm = "privacyworm.cli:cli"
+privacyworm = "privacyworm.cli:main"
+
+[project.gui-scripts]
+# Windowless launcher used by the daily reminder on Windows so the
+# scheduled task doesn't flash a console window every morning.
+privacyworm-remind = "privacyworm.desktop:remind_entrypoint"
+
+[tool.hatch.build.targets.wheel]
+packages = ["privacyworm"]
+
+[tool.hatch.build.targets.wheel.force-include]
+# Playbooks live at the repo root for contributors, but they have to
+# ride inside the package so a plain `pip install` / `uv tool install`
+# actually has brokers to scan.
+"playbooks" = "privacyworm/playbooks"
+
+[tool.hatch.build.targets.sdist]
+include = ["privacyworm", "playbooks", "tests", "README.md", "LICENSE", "install.sh", "install.ps1"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

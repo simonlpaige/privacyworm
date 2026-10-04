@@ -4,10 +4,11 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 import tldextract
 
-from privacyworm.brokers.base import BaseBroker
+from privacyworm.brokers.base import AssistCallback, BaseBroker
 from privacyworm.brokers.email import EmailBroker
 from privacyworm.brokers.web_form import WebFormBroker
 from privacyworm.inbox.imap import ImapInbox
@@ -39,16 +40,59 @@ def _make_broker(playbook: Playbook, profile: Profile, headed: bool = False) -> 
     return WebFormBroker(playbook, profile, headed)
 
 
-def scan_broker(
+# Listing statuses that mean "we asked the broker to take this down".
+SUBMITTED_STATUSES = (
+    "optout_submitted",
+    "confirmation_needed",
+    "confirmation_clicked",
+    "removal_pending",
+    "opt_out_filed",
+    "opt_out_confirmed",
+)
+
+
+def scan_broker_report(
     playbook: Playbook,
     profile: Profile,
     db: StateDB,
     headed: bool = False,
-) -> list[dict]:
-    """Scan a single broker, score each listing, and store the verdicts."""
-    broker = _make_broker(playbook, profile, headed)
-    listings = broker.scan()
+) -> dict:
+    """Scan one broker and say how it went.
 
+    Returns ``{broker, display_name, status, note, listings, new,
+    gone, reappeared, search_url}`` where status is "ok", "blocked",
+    "unreadable" (page loaded but our selectors found nothing while the
+    name is on the page) or "error".
+    Only an "ok" scan is trusted: it moves the rescan date forward and
+    marks earlier opt-outs that no longer show up as removed. A blocked
+    or failed scan changes nothing, so the broker stays due.
+    """
+    report: dict[str, Any] = {
+        "broker": playbook.broker,
+        "display_name": playbook.display_name,
+        "status": "ok",
+        "note": "",
+        "listings": [],
+        "new": 0,
+        "gone": 0,
+        "reappeared": 0,
+        "search_url": None,
+    }
+    broker = _make_broker(playbook, profile, headed)
+    try:
+        report["search_url"] = broker._build_search_url()
+    except ValueError:
+        pass
+    try:
+        listings = broker.scan()
+        report["status"], report["note"] = broker.scan_status, broker.scan_note
+    except Exception as e:  # noqa: BLE001 - one broken site must not stop the run
+        lines = str(e).strip().splitlines()
+        report["status"], report["note"] = "error", (lines[0] if lines else type(e).__name__)
+        logger.debug("scan failed", exc_info=True)
+        return report
+
+    seen_urls = set()
     for listing in listings:
         text_for_scoring = " ".join(
             str(v) for v in (
@@ -63,19 +107,77 @@ def scan_broker(
         listing["match_score"] = verdict["score"]
         listing["matched_fields"] = verdict["matched_fields"]
 
-        db.add_listing(
-            broker=playbook.broker,
-            listing_url=listing.get("listing_url"),
-            confidence=verdict["confidence"],
-            match_score=verdict["score"],
-            matched_fields=verdict["matched_fields"],
-        )
+        url = listing.get("listing_url")
+        seen_urls.add(url)
+        existing = db.find_listing(playbook.broker, url)
+        if existing is None:
+            db.add_listing(
+                broker=playbook.broker,
+                listing_url=url,
+                confidence=verdict["confidence"],
+                match_score=verdict["score"],
+                matched_fields=verdict["matched_fields"],
+            )
+            report["new"] += 1
+        elif existing["status"] == "removed":
+            db.update_listing_status(existing["id"], "reappeared")
+            report["reappeared"] += 1
 
-    # Update rescan schedule
-    next_scan = datetime.now(timezone.utc) + timedelta(days=playbook.rescan_days)
-    db.set_rescan(playbook.broker, next_scan.isoformat())
+    report["listings"] = listings
 
-    return listings
+    if report["status"] == "ok":
+        for row in db.get_listings(broker=playbook.broker):
+            if row["status"] in SUBMITTED_STATUSES and row["listing_url"] not in seen_urls:
+                db.update_listing_status(row["id"], "removed")
+                report["gone"] += 1
+        next_scan = datetime.now(timezone.utc) + timedelta(days=playbook.rescan_days)
+        db.set_rescan(playbook.broker, next_scan.isoformat())
+
+    return report
+
+
+def scan_broker(
+    playbook: Playbook,
+    profile: Profile,
+    db: StateDB,
+    headed: bool = False,
+) -> list[dict]:
+    """Scan a single broker, score each listing, and store the verdicts."""
+    report = scan_broker_report(playbook, profile, db, headed)
+    if report["status"] == "error":
+        raise RuntimeError(report["note"])
+    return report["listings"]
+
+
+def scan_reports(
+    profile: Profile,
+    db: StateDB,
+    headed: bool = False,
+    broker_name: str | None = None,
+    playbooks_dir: Path | None = None,
+    on_start=None,
+    on_done=None,
+) -> list[dict]:
+    """Scan every broker (or one) and return a report per broker.
+
+    ``on_start(playbook)`` / ``on_done(report)`` let the UI show progress.
+    """
+    if broker_name:
+        pb = get_playbook(broker_name, directory=playbooks_dir)
+        if not pb:
+            raise ValueError(f"No playbook found for broker: {broker_name}")
+        playbooks = [pb]
+    else:
+        playbooks = load_all_playbooks(directory=playbooks_dir)
+    reports = []
+    for pb in playbooks:
+        if on_start:
+            on_start(pb)
+        report = scan_broker_report(pb, profile, db, headed)
+        if on_done:
+            on_done(report)
+        reports.append(report)
+    return reports
 
 
 def scan_all(
@@ -91,23 +193,47 @@ def scan_all(
     playbooks (for example ``playbooks/mugshots/``) instead of the
     default broker collection.
     """
+    try:
+        reports = scan_reports(
+            profile, db, headed=headed, broker_name=broker_name, playbooks_dir=playbooks_dir
+        )
+    except ValueError as e:
+        logger.error(str(e))
+        return {}
     results: dict[str, list[dict]] = {}
-
-    if broker_name:
-        playbook = get_playbook(broker_name, directory=playbooks_dir)
-        if not playbook:
-            logger.error(f"No playbook found for broker: {broker_name}")
-            return results
-        results[broker_name] = scan_broker(playbook, profile, db, headed)
-    else:
-        for playbook in load_all_playbooks(directory=playbooks_dir):
-            try:
-                results[playbook.broker] = scan_broker(playbook, profile, db, headed)
-            except Exception as e:
-                logger.error(f"Error scanning {playbook.broker}: {e}")
-                results[playbook.broker] = []
-
+    for r in reports:
+        if r["status"] != "ok":
+            logger.warning(f"{r['display_name']}: couldn't check ({r['note']})")
+        results[r["broker"]] = r["listings"]
     return results
+
+
+FIELD_WORDS = {
+    "full_name": "your name",
+    "city": "city",
+    "state": "state",
+    "zip": "ZIP code",
+    "phone": "phone number",
+    "relative": "a relative",
+    "age": "age",
+}
+CONFIDENCE_WORDS = {
+    "high": "Strong match",
+    "medium": "Possible match",
+    "low": "Weak match - might be someone else",
+}
+
+
+def describe_match(listing_row: dict) -> tuple[str, str]:
+    """Plain-English (headline, matched-on) for a listing row."""
+    matched = _decode_matched_fields(listing_row.get("matched_fields"))
+    score = listing_row.get("match_score")
+    confidence = listing_row.get("confidence") or "unknown"
+    headline = CONFIDENCE_WORDS.get(confidence, "Unscored match")
+    if score is not None:
+        headline += f" ({score}/100)"
+    words = [FIELD_WORDS.get(f, f) for f in matched]
+    return headline, (", ".join(words) if words else "nothing beyond the name search")
 
 
 def _confirm_listing(listing_row: dict, profile: Profile) -> bool:
@@ -115,33 +241,12 @@ def _confirm_listing(listing_row: dict, profile: Profile) -> bool:
 
     Returns True when the user types y/yes (case-insensitive), else False.
     """
-    matched_fields_raw = listing_row.get("matched_fields") or "[]"
-    try:
-        matched_fields = json.loads(matched_fields_raw) if isinstance(matched_fields_raw, str) else list(matched_fields_raw)
-    except (json.JSONDecodeError, TypeError):
-        matched_fields = []
-    missing_fields = [f for f in ALL_MATCHABLE_FIELDS if f not in matched_fields]
-
-    score = listing_row.get("match_score")
-    confidence = listing_row.get("confidence") or "unknown"
-
-    name_str = f"{profile.name.first} {profile.name.last}".strip()
-    location = ""
-    if profile.addresses:
-        addr = profile.addresses[0]
-        location_parts = [p for p in (addr.city, addr.state) if p]
-        if location_parts:
-            location = ", " + " ".join(location_parts)
-
+    headline, matched_on = describe_match(listing_row)
     print()
-    score_label = f"{score}/100" if score is not None else "unknown"
-    print(f"  Broker:  {listing_row['broker']}")
-    print(f"  Match:   {name_str}{location} (score: {score_label} - {confidence} confidence)")
-    print(f"  Matched fields: {', '.join(matched_fields) if matched_fields else 'none'}")
-    print(f"  Missing: {', '.join(missing_fields) if missing_fields else 'none'}")
+    print(f"  {listing_row['broker']}: {headline}")
+    print(f"  Matched on: {matched_on}")
     if listing_row.get("listing_url"):
-        print(f"  URL:     {listing_row['listing_url']}")
-
+        print(f"  Page:       {listing_row['listing_url']}")
     try:
         answer = input("File opt-out? [y/N]: ").strip().lower()
     except EOFError:
@@ -149,7 +254,7 @@ def _confirm_listing(listing_row: dict, profile: Profile) -> bool:
     return answer in ("y", "yes")
 
 
-REVIEWABLE_STATUSES = ("found", "candidate_found", "needs_review")
+REVIEWABLE_STATUSES = ("found", "candidate_found", "needs_review", "reappeared")
 APPROVED_STATUSES = ("approved",)
 
 
@@ -168,18 +273,32 @@ def _decode_matched_fields(raw) -> list[str]:
 
 
 def _format_optout_payload(playbook: Playbook, profile: Profile, listing_row: dict) -> str:
-    """Build the same dry-run payload the opt-out flow would send.
+    """Describe exactly what the opt-out would send, in plain lines.
 
     This is what the user sees before approving. It is the strongest
     "no surprises" check we have - a listing only gets opted out using
     exactly these fields.
     """
+    opt = playbook.opt_out
+    if opt.method == "manual":
+        return f"Nothing automatic. You'll get instructions and a link to {opt.url or playbook.homepage}"
     broker = _make_broker(playbook, profile, headed=False)
     try:
         result = broker.file_optout(listing_row, dry_run=True)
-        return result.get("details", "")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return f"(could not build dry-run payload: {e})"
+    details = result.get("details", "")
+    if opt.method == "web_form" and isinstance(broker, WebFormBroker):
+        lines = [f"Their opt-out form at {opt.url}, filled in with:"]
+        for key, value in broker._build_dry_run_payload(listing_row).items():
+            lines.append(f"  {key}: {value}")
+        return "\n".join(lines)
+    if opt.method == "email" and isinstance(broker, EmailBroker):
+        subject = opt.email_subject or "Data Removal Request"
+        lines = [f"An email to {opt.email_address}", f"  Subject: {subject}"]
+        lines += [f"  | {line}" for line in broker._build_email_body(listing_row).splitlines()]
+        return "\n".join(lines)
+    return details.replace("DRY RUN - ", "")
 
 
 def review_listings(
@@ -190,16 +309,22 @@ def review_listings(
 ) -> dict:
     """Walk pending listings, show evidence, ask the user to approve each one.
 
-    For each listing, the user sees:
-      - broker name, listing URL, score, confidence, matched fields
-      - the exact opt-out payload that would be filed if approved
-    Then they choose y / N / skip / quit. The result is recorded back
-    on the listing's status so ``optout --approved-only`` can pick it
-    up.
+    For each listing, the user sees the broker, how strong the match is
+    and why, the page itself (they can open it), and exactly what the
+    opt-out would send. Answers:
+
+      y  yes, it's me - remove it       (-> approved)
+      n  not me                         (-> rejected, never asked again)
+      o  open the page in my browser    (then asks again)
+      s  decide later / Enter           (-> needs_review)
+      q  stop reviewing                 (rest -> needs_review)
 
     Returns a summary dict: counts of approved / rejected / skipped /
-    failed lookups. The caller (the CLI) prints it back to the user.
+    no_playbook. The caller prints it back to the user.
     """
+    from privacyworm.browser import open_in_default_browser
+    from privacyworm.ui import style
+
     if broker_name:
         listings = []
         for s in REVIEWABLE_STATUSES:
@@ -219,62 +344,66 @@ def review_listings(
     if not listings:
         return summary
 
-    name_str = f"{profile.name.first} {profile.name.last}".strip()
-    location = ""
-    if profile.addresses:
-        addr = profile.addresses[0]
-        parts = [p for p in (addr.city, addr.state) if p]
-        if parts:
-            location = ", " + " ".join(parts)
+    # Strongest matches first - they're the quick yeses.
+    listings.sort(key=lambda r: -(r.get("match_score") or 0))
+    total = len(listings)
 
-    for listing_row in listings:
+    for idx, listing_row in enumerate(listings, 1):
         playbook = get_playbook(listing_row["broker"], directory=playbooks_dir)
         if not playbook:
             logger.warning(f"No playbook for broker {listing_row['broker']}, skipping")
             summary["no_playbook"] += 1
             continue
 
-        matched = _decode_matched_fields(listing_row.get("matched_fields"))
-        missing = [f for f in ALL_MATCHABLE_FIELDS if f not in matched]
-        score = listing_row.get("match_score")
-        confidence = listing_row.get("confidence") or "unknown"
-        score_label = f"{score}/100" if score is not None else "unknown"
-
+        headline, matched_on = describe_match(listing_row)
         print()
-        print(f"  Broker:  {listing_row['broker']}")
-        print(f"  Match:   {name_str}{location} (score: {score_label} - {confidence} confidence)")
-        print(f"  Matched: {', '.join(matched) if matched else 'none'}")
-        print(f"  Missing: {', '.join(missing) if missing else 'none'}")
+        print(style(f"  [{idx} of {total}]  {playbook.display_name}", bold=True))
+        if listing_row.get("status") == "reappeared":
+            print("  This listing came back after an earlier removal.")
+        print(f"  {headline}")
+        print(f"  Matched on: {matched_on}")
         if listing_row.get("listing_url"):
-            print(f"  URL:     {listing_row['listing_url']}")
+            print(f"  Page:       {listing_row['listing_url']}")
         payload = _format_optout_payload(playbook, profile, listing_row)
         if payload:
-            print("  Would file:")
+            print("  If you say yes, PrivacyWorm will use:")
             for line in payload.splitlines():
                 print(f"    {line}")
 
-        try:
-            answer = input("Approve this listing for opt-out? [y/N/skip/quit]: ").strip().lower()
-        except EOFError:
-            answer = "quit"
+        while True:
+            try:
+                answer = input(
+                    "  Is this you? [y]es remove it / [n]ot me / [o]pen page / [s]kip / [q]uit: "
+                ).strip().lower()
+            except EOFError:
+                answer = "quit"
+            if answer in ("o", "open"):
+                url = listing_row.get("listing_url")
+                if url and open_in_default_browser(url):
+                    print("  Opened in your browser. Take a look, then answer here.")
+                else:
+                    print("  Couldn't open a browser. Copy the Page link above instead.")
+                continue
+            break
 
         if answer in ("q", "quit"):
-            print("Stopped reviewing. Remaining listings stay in needs_review.")
-            for r in listings[listings.index(listing_row):]:
-                if r["status"] in ("found", "candidate_found"):
+            print("  Stopped reviewing. The rest will be waiting next time.")
+            for r in listings[idx - 1:]:
+                if r["status"] in ("found", "candidate_found", "reappeared"):
                     db.update_listing_status(r["id"], "needs_review")
             break
 
         if answer in ("y", "yes"):
             db.update_listing_status(listing_row["id"], "approved")
             summary["approved"] += 1
-        elif answer in ("s", "skip"):
-            if listing_row["status"] in ("found", "candidate_found"):
-                db.update_listing_status(listing_row["id"], "needs_review")
-            summary["skipped"] += 1
-        else:
+        elif answer in ("n", "no", "not me"):
             db.update_listing_status(listing_row["id"], "rejected")
             summary["rejected"] += 1
+        else:
+            # Enter / skip / anything unexpected: keep it, ask again later.
+            if listing_row["status"] in ("found", "candidate_found", "reappeared"):
+                db.update_listing_status(listing_row["id"], "needs_review")
+            summary["skipped"] += 1
 
     return summary
 
@@ -288,8 +417,14 @@ def file_optouts(
     playbooks_dir: Path | None = None,
     auto_confirm: bool = False,
     approved_only: bool = False,
+    assist: AssistCallback | None = None,
 ) -> list[dict]:
     """File opt-out requests for all found listings.
+
+    ``assist`` switches to the guided, human-finishes-the-last-step mode:
+    web forms open in a visible window pre-filled, email opt-outs open
+    as a draft in the user's mail app, and manual brokers get their page
+    opened with instructions. See ``brokers.base.AssistCallback``.
 
     When ``playbooks_dir`` is given without ``broker_name``, only listings
     for brokers that actually live in that directory are processed. That
@@ -350,6 +485,29 @@ def file_optouts(
 
         if playbook.opt_out.method == "manual":
             msg = playbook.opt_out.manual_instructions or "Manual opt-out required. See playbook for instructions."
+            if assist is not None and not dry_run:
+                where = playbook.opt_out.url or playbook.homepage
+                outcome = assist({
+                    "kind": "manual",
+                    "broker": playbook.display_name,
+                    "url": where,
+                    "instructions": msg,
+                    "listing_url": listing_row.get("listing_url"),
+                    "requires_confirmation": False,
+                })
+                if outcome == "done":
+                    db.update_listing_status(listing_row["id"], "optout_submitted")
+                    db.add_optout(listing_id=listing_row["id"], method="manual", details="Done by hand")
+                outcomes.append({
+                    "broker": listing_row["broker"],
+                    "listing_id": listing_row["id"],
+                    "success": outcome == "done",
+                    "method": "manual" if outcome != "skipped" else "skipped",
+                    "details": {"done": "You finished it by hand.", "skipped": "Skipped for now."}.get(
+                        outcome, "Not finished yet."
+                    ),
+                })
+                continue
             outcomes.append({
                 "broker": listing_row["broker"],
                 "listing_id": listing_row["id"],
@@ -360,10 +518,16 @@ def file_optouts(
             continue
 
         broker = _make_broker(playbook, profile, headed)
-        result = broker.file_optout(listing_row, dry_run=dry_run)
+        try:
+            result = broker.file_optout(listing_row, dry_run=dry_run, assist=assist)
+        except Exception as e:  # noqa: BLE001 - report it and keep going
+            result = {"success": False, "method": playbook.opt_out.method, "details": f"Error: {e}"}
 
         if not dry_run and result["success"]:
-            db.update_listing_status(listing_row["id"], "optout_submitted")
+            db.update_listing_status(
+                listing_row["id"],
+                "confirmation_needed" if playbook.opt_out.requires_confirmation else "optout_submitted",
+            )
             db.add_optout(
                 listing_id=listing_row["id"],
                 method=result["method"],

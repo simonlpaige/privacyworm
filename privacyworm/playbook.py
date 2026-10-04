@@ -1,14 +1,34 @@
 """Load and validate broker playbooks from YAML files."""
 
 from pathlib import Path
+from string import Formatter
 from typing import Optional, Union
 
 import tldextract
 import yaml
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-PLAYBOOKS_DIR = Path(__file__).parent.parent / "playbooks"
 
+def _find_playbooks_root() -> Path:
+    """Locate the bundled playbooks folder.
+
+    Installed wheels carry the YAML files inside the package
+    (``privacyworm/playbooks``). A source checkout or editable install
+    keeps them at the repo root (``playbooks/``) so contributors can
+    edit them where they expect to find them.
+    """
+    here = Path(__file__).parent
+    for candidate in (here / "playbooks", here.parent / "playbooks"):
+        if candidate.is_dir():
+            return candidate
+    return here.parent / "playbooks"
+
+
+PLAYBOOKS_DIR = _find_playbooks_root()
+MUGSHOT_PLAYBOOKS_DIR = PLAYBOOKS_DIR / "mugshots"
+SOCIAL_PLAYBOOKS_DIR = PLAYBOOKS_DIR / "social"
+
+SEARCH_URL_PLACEHOLDERS = {"first", "last", "middle", "city", "state", "zip"}
 VALID_OPT_OUT_METHODS = {"web_form", "email", "manual"}
 VALID_CONFIRMATION_TYPES = {"email_link", "none", "manual_ack"}
 VALID_SEARCH_METHODS = {"browser", "http"}
@@ -164,6 +184,14 @@ class Playbook(BaseModel):
             raise ValueError(
                 f"search.url_template must use https://, got: {url_template!r}"
             )
+        for _lit, field, spec, conv in Formatter().parse(url_template):
+            if field is None:
+                continue
+            if field not in SEARCH_URL_PLACEHOLDERS or spec or conv:
+                raise ValueError(
+                    f"search.url_template may only use plain placeholders "
+                    f"{sorted(SEARCH_URL_PLACEHOLDERS)}, got {{{field}}}"
+                )
         template_domain = _registered_domain(url_template)
         if template_domain != homepage_domain:
             raise ValueError(

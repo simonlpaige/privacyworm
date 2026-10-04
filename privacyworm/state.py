@@ -9,6 +9,7 @@ keeping raw scraped HTML around.
 
 import json
 import logging
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,7 +19,7 @@ from privacyworm.config import (
     get_state_db_path,
     is_state_encryption_enabled,
 )
-from privacyworm.profile import decrypt_bytes, encrypt_bytes
+from privacyworm.profile import decrypt_bytes, encrypt_bytes, write_private
 
 logger = logging.getLogger("privacyworm")
 
@@ -151,11 +152,15 @@ class StateDB:
             if self.encrypted_path.exists():
                 blob = self.encrypted_path.read_bytes()
                 plaintext = decrypt_bytes(blob, passphrase)
-                self.db_path.write_bytes(plaintext)
+                write_private(self.db_path, plaintext)
         else:
             self.db_path = db_path or get_state_db_path()
 
         self.conn = sqlite3.connect(str(self.db_path))
+        try:
+            os.chmod(self.db_path, 0o600)
+        except OSError:
+            pass
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
         self._migrate_listings_schema()
@@ -245,7 +250,7 @@ class StateDB:
         if self.encrypted and self.encrypted_path is not None:
             plaintext = self.db_path.read_bytes()
             blob = encrypt_bytes(plaintext, self.passphrase or "")
-            self.encrypted_path.write_bytes(blob)
+            write_private(self.encrypted_path, blob)
             try:
                 self.db_path.unlink()
             except OSError:
@@ -285,6 +290,34 @@ class StateDB:
             params.append(status)
         rows = self.conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]
+
+    def find_listing(self, broker: str, listing_url: str | None) -> dict | None:
+        """Return the stored row for (broker, listing_url), or None."""
+        if listing_url is None:
+            row = self.conn.execute(
+                "SELECT * FROM listings WHERE broker = ? AND listing_url IS NULL", (broker,)
+            ).fetchone()
+        else:
+            row = self.conn.execute(
+                "SELECT * FROM listings WHERE broker = ? AND listing_url = ?", (broker, listing_url)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def status_counts(self) -> dict[str, int]:
+        """Count listings per status."""
+        rows = self.conn.execute(
+            "SELECT status, COUNT(*) AS n FROM listings GROUP BY status"
+        ).fetchall()
+        return {r["status"]: r["n"] for r in rows}
+
+    def next_rescan_at(self) -> str | None:
+        """Earliest scheduled re-check (ISO timestamp), if any broker was scanned."""
+        row = self.conn.execute("SELECT MIN(next_scan_at) AS t FROM rescans").fetchone()
+        return row["t"] if row and row["t"] else None
+
+    def last_scan_at(self) -> str | None:
+        row = self.conn.execute("SELECT MAX(last_scanned_at) AS t FROM rescans").fetchone()
+        return row["t"] if row and row["t"] else None
 
     def update_listing_status(self, listing_id: int, status: str) -> None:
         if status not in VALID_LISTING_STATUSES:

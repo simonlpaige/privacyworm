@@ -4,13 +4,14 @@ PrivacyWorm deals with sensitive personal data. Here's exactly how it works so y
 
 ## Where Your Data Lives
 
-All personal information is stored locally in `~/.privacyworm/`:
+All personal information is stored locally in `~/.privacyworm/` (on Windows, `C:\Users\<you>\.privacyworm\`). The folder is created readable only by you, and every file PrivacyWorm writes there is owner-only (0600 on macOS/Linux).
 
 | File | Contents | Protection |
 |------|----------|------------|
-| `profile.yaml.enc` | Your name, addresses, phone numbers, DOB | Fernet (AES-128-CBC + HMAC-SHA256), key derived from your passphrase with Argon2id |
+| `profile.yaml.enc` | Your name, addresses, phone numbers, DOB, and the optional email app password used for confirmation emails | Fernet (AES-128-CBC + HMAC-SHA256), key derived from your passphrase with Argon2id |
 | `social_tokens.yaml.enc` | OAuth tokens for Reddit / Twitter, if configured | Same scheme as the profile |
-| `state.db` (or `state.db.enc`) | Broker names, listing URLs, and the score we gave each match | SQLite, plaintext by default. Run `privacyworm init --encrypt-state` to encrypt it with the same Fernet key |
+| `state.db.enc` (or `state.db`) | Broker names, listing URLs, and the score we gave each match | Encrypted with the same passphrase when you set up through guided mode (`privacyworm`). Older installs and `privacyworm init` without `--encrypt-state` keep a plaintext `state.db` |
+| `schedule.json` | The date your next check-up is due, and when you were last reminded | Plaintext on purpose: the daily reminder has to read it without your passphrase. It holds no names, URLs or broker list |
 | `network.log` | Every HTTP/SMTP/IMAP request PrivacyWorm makes | Plaintext log for your audit. Names and query strings are redacted by default |
 
 ## What encryption actually protects
@@ -63,7 +64,9 @@ Run `privacyworm export-audit --include-sensitive` to dump the full unredacted l
 
 It does **not** contain raw scraped HTML or scraped names; the matching engine uses the scrape and stores only a verdict.
 
-The default state.db is unencrypted because the user often wants to inspect it from outside Python. If you would prefer it encrypted on disk, run `privacyworm init --encrypt-state` once. It will store as `state.db.enc` and decrypt into a temp file when commands run.
+Guided mode (`privacyworm` with no command) encrypts the state database from the first run, using the same passphrase as your profile, so it costs you nothing extra. It is stored as `state.db.enc` and decrypted into a working file only while PrivacyWorm is open. If PrivacyWorm is killed mid-run, that working `state.db` can be left behind; the next run re-encrypts and removes it.
+
+If you set up with `privacyworm init` and want the same protection, run `privacyworm init --encrypt-state`.
 
 You can also wipe local state at any time:
 
@@ -96,3 +99,11 @@ PrivacyWorm does **not** trust:
 ## Reporting Security Issues
 
 If you find a security vulnerability, please open a GitHub issue or email the maintainer directly. We take these seriously and will respond quickly.
+
+## Reminders and shortcuts
+
+`privacyworm reminders on` registers a once-a-day job with your operating system (Task Scheduler on Windows, launchd on macOS, a systemd user timer or cron on Linux). The job runs `privacyworm remind`, which reads only `schedule.json`. It never unlocks your profile, never opens a browser on its own, and never contacts a broker. When a check-up is due it opens the PrivacyWorm window (or shows a notification on Linux) and you take it from there. `privacyworm reminders off` removes the job.
+
+## Installer
+
+The one-line installers (`install.sh`, `install.ps1`) download [uv](https://github.com/astral-sh/uv) from astral.sh if you don't already have it, then use it to install PrivacyWorm from this GitHub repository into its own isolated environment. Both scripts are short and commented; read them before you run them if you like. PrivacyWorm uses the Chrome or Edge you already have when it can, and only downloads Playwright's Chromium when neither is installed.

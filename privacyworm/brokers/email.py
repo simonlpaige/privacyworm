@@ -12,8 +12,9 @@ import os
 import smtplib
 from email.mime.text import MIMEText
 from string import Template
+from urllib.parse import quote
 
-from privacyworm.brokers.base import BaseBroker, log_network_request
+from privacyworm.brokers.base import AssistCallback, BaseBroker, log_network_request
 from privacyworm.playbook import Playbook, resolve_legal_basis
 from privacyworm.profile import Profile
 
@@ -25,47 +26,33 @@ SMTP_USER = os.environ.get("PRIVACYWORM_SMTP_USER", "")
 SMTP_PASS = os.environ.get("PRIVACYWORM_SMTP_PASS", "")
 
 
+def smtp_configured() -> bool:
+    """True when the user set SMTP credentials for direct sending."""
+    return bool(SMTP_USER and SMTP_PASS)
+
+
+def build_mailto(to_addr: str, subject: str, body: str) -> str:
+    """A mailto: link that opens a filled-in draft in the default mail app."""
+    body = body.replace("\r\n", "\n").replace("\n", "\r\n")
+    return f"mailto:{quote(to_addr, safe='@')}?subject={quote(subject)}&body={quote(body)}"
+
+
 class EmailBroker(BaseBroker):
     def __init__(self, playbook: Playbook, profile: Profile, headed: bool = False):
         super().__init__(playbook, profile, headed)
 
-    def scan(self) -> list[dict]:
-        """Use Playwright to search the broker site, same as web form."""
-        from playwright.sync_api import sync_playwright
+    def file_optout(
+        self,
+        listing: dict,
+        dry_run: bool = False,
+        assist: AssistCallback | None = None,
+    ) -> dict:
+        """Send an opt-out email to the broker.
 
-        url = self._build_search_url()
-        log_network_request("GET", url, "scan")
-        logger.info(f"Scanning {self.playbook.display_name}: {url}")
-
-        results = []
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=not self.headed)
-            page = browser.new_page()
-            page.goto(url, wait_until="domcontentloaded", timeout=30_000)
-
-            for selector in self.playbook.search.listing_selectors:
-                elements = page.query_selector_all(selector)
-                for el in elements:
-                    text = el.inner_text()
-                    link_el = el.query_selector("a")
-                    link = link_el.get_attribute("href") if link_el else None
-                    if link and not link.startswith("http"):
-                        link = self.playbook.homepage.rstrip("/") + link
-
-                    results.append({
-                        "listing_url": link,
-                        "matched_name": text.split("\n")[0].strip() if text else None,
-                        "matched_city": None,
-                        "matched_state": None,
-                        "raw_snippet": text[:500] if text else None,
-                    })
-
-            browser.close()
-
-        return self._filter_matches(results)
-
-    def file_optout(self, listing: dict, dry_run: bool = False) -> dict:
-        """Send an opt-out email to the broker."""
+        With SMTP settings in the environment, the email is sent directly.
+        Without them (the normal case), assisted mode opens a ready-to-send
+        draft in the user's own mail app - no passwords to configure.
+        """
         opt = self.playbook.opt_out
         if not opt.email_address:
             return {"success": False, "method": "email", "details": "No email_address in playbook"}
@@ -85,6 +72,34 @@ class EmailBroker(BaseBroker):
                            f"  Body:\n{body}",
             }
 
+        if assist is not None and not smtp_configured():
+            mailto = build_mailto(to_addr, subject, body)
+            log_network_request("MAILTO", f"mailto:{to_addr}", "opt-out email draft opened")
+            outcome = assist({
+                "kind": "email",
+                "broker": self.playbook.display_name,
+                "to": to_addr,
+                "subject": subject,
+                "body": body,
+                "mailto": mailto,
+                "requires_confirmation": opt.requires_confirmation,
+            })
+            if outcome == "done":
+                return {"success": True, "method": "email", "details": f"Sent from your mail app to {to_addr}"}
+            if outcome == "skipped":
+                return {"success": False, "method": "skipped", "details": "Skipped for now."}
+            return {"success": False, "method": "email", "details": "You reported the email wasn't sent."}
+
+        if not smtp_configured():
+            return {
+                "success": False,
+                "method": "email",
+                "details": (
+                    f"No mail server set up. Run 'privacyworm' (guided mode) to send this "
+                    f"from your own mail app, or email {to_addr} yourself."
+                ),
+            }
+
         log_network_request("SMTP", f"{SMTP_HOST}:{SMTP_PORT} -> {to_addr}", "opt-out email")
         logger.info(f"Sending opt-out email to {to_addr} for {self.playbook.display_name}")
 
@@ -102,14 +117,6 @@ class EmailBroker(BaseBroker):
             return {"success": True, "method": "email", "details": f"Sent opt-out email to {to_addr}"}
         except Exception as e:
             return {"success": False, "method": "email", "details": f"SMTP error: {e}"}
-
-    def _filter_matches(self, results: list[dict]) -> list[dict]:
-        matched = []
-        for r in results:
-            name = (r.get("matched_name") or "").lower()
-            if self.profile.name.first.lower() in name and self.profile.name.last.lower() in name:
-                matched.append(r)
-        return matched
 
     def _build_email_body(self, listing: dict) -> str:
         state_code = (

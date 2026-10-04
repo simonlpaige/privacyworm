@@ -60,3 +60,53 @@ jobs:
 
       - name: pip-audit
         run: pip-audit
+
+  # Installs the app exactly the way users do (one-line installer, no git,
+  # no pre-installed Python assumptions) and pokes the OS integration.
+  installer:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      PRIVACYWORM_NO_LAUNCH: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run install.sh (macOS / Linux)
+        if: runner.os != 'Windows'
+        run: PRIVACYWORM_SOURCE="file://$GITHUB_WORKSPACE" sh ./install.sh
+
+      - name: Run install.ps1 (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $env:PRIVACYWORM_SOURCE = "file:///" + ($env:GITHUB_WORKSPACE -replace '\\','/')
+          .\install.ps1
+          if (-not (Test-Path "$env:USERPROFILE\.local\bin\privacyworm.exe")) { exit 1 }
+
+      - name: Smoke-test the installed app (macOS / Linux)
+        if: runner.os != 'Windows'
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          privacyworm --version
+          privacyworm doctor
+          privacyworm reminders on
+          privacyworm reminders status
+          privacyworm remind
+          privacyworm reminders off
+          echo y | privacyworm uninstall --keep-data
+
+      - name: Smoke-test the installed app (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $pw = "$env:USERPROFILE\.local\bin\privacyworm.exe"
+          & $pw --version; if ($LASTEXITCODE) { exit 1 }
+          & $pw doctor; if ($LASTEXITCODE) { exit 1 }
+          if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\PrivacyWorm.lnk")) { Write-Error "no Start menu shortcut"; exit 1 }
+          & $pw reminders on; if ($LASTEXITCODE) { exit 1 }
+          & $pw reminders status
+          & $pw reminders off
+          "y" | & $pw uninstall --keep-data

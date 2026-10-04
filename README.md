@@ -1,61 +1,54 @@
 # PrivacyWorm
 
-PrivacyWorm is a local-first workbench for finding and removing data broker listings. It scans, shows you the evidence, drafts opt-out requests, tracks status, and keeps the broker playbooks current. It keeps you in the loop - nothing gets filed without your approval.
+PrivacyWorm finds your name, address, phone number and relatives on people-search sites (Spokeo, Whitepages, BeenVerified and friends) and walks you through getting each listing taken down. Then it reminds you to check again, because they come back.
 
-It runs on your own computer, so the personal info needed to find your listings never has to pass through somebody else's server.
+It's the do-it-yourself version of what California's DROP system and paid services like DeleteMe do. It runs on your own computer, so the info needed to find you never goes to anyone else's server, and nothing gets sent to a broker until you say yes.
 
-## Known Limitations
+## Install
 
-Read this before you install. We would rather you understand the gaps now than be surprised by them.
+No git, no Python, no setup steps. Paste one line and press Enter.
 
-- **We cover 10 of ~200 major US data brokers.** More come via community PRs. The list below is honest about which playbooks have been live-tested and which are scaffolding.
-- **Some brokers throw CAPTCHAs.** When that happens, the tool pauses with a visible browser window and asks you to solve it.
-- **Some brokers require ID verification.** PrivacyWorm cannot do that on your behalf - it tells you what the site is asking for and steps out of the way.
-- **Brokers re-list you.** Most re-scrape every 60-90 days, which is why there is a `rescan` command meant to run on a schedule.
-- **California residents: use DROP first.** California's Data Removal Operations Platform (drop.oag.ca.gov) reaches the 500+ registered brokers in one request. PrivacyWorm fills the long tail outside that registry.
+**Mac** - open the Terminal app and paste:
 
-## 60-Second Quickstart
-
-```bash
-# Install
-pip install .
-
-# Install browser for web automation
-playwright install chromium
-
-# Set up your profile (interactive, encrypted on disk)
-privacyworm init
-
-# See what the brokers have on you
-privacyworm scan --headed
-
-# Look at each listing, see the evidence, approve or reject one by one
-privacyworm review
-
-# File the opt-outs you approved
-privacyworm optout --approved-only
-
-# Check on the status of everything
-privacyworm status
+```sh
+curl -fsSL https://raw.githubusercontent.com/simonlpaige/privacyworm/main/install.sh | sh
 ```
 
-The three-step `scan -> review -> optout --approved-only` flow is the recommended path. Nothing gets filed until you have eyeballed each listing and said yes.
+**Windows** - open PowerShell (Start menu → type "PowerShell") and paste:
 
-## How It Works
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/simonlpaige/privacyworm/main/install.ps1 | iex"
+```
 
-1. **You tell it who you are.** `privacyworm init` walks you through entering your name, addresses, phone numbers, etc. This gets encrypted with Fernet (AES-128-CBC + HMAC-SHA256, key derived with Argon2id) and stored locally at `~/.privacyworm/profile.yaml.enc`.
+Rather click than type? Download [`install.cmd`](https://github.com/simonlpaige/privacyworm/raw/main/install.cmd) and double-click it. (If Windows says "Windows protected your PC", click **More info → Run anyway**.)
 
-2. **It searches the brokers.** Each broker has a "playbook" - a YAML file that describes how to search that site, what fields to extract from a listing card, and what opt-out looks like. No code runs from these files; they're pure data, validated by Pydantic.
+**Linux** - same as Mac, in any terminal.
 
-3. **It scores each match.** The matching engine compares scraped listings to your profile across full name, city, state, ZIP, phone, relatives, and an age-from-DOB sanity check. Each listing gets a high / medium / low confidence label.
+The installer takes a minute or two. It sets up everything PrivacyWorm needs in its own folder (including Python, if you don't have it), uses the Chrome or Edge you already have, and adds **PrivacyWorm** to your Start menu / Applications / app launcher. [What exactly does it do?](docs/SECURITY.md#installer)
 
-4. **You review every match.** `privacyworm review` shows the score, the matched fields, and the exact opt-out payload that would be sent. You answer y / N / skip / quit. Only listings you approve move on.
+**Updating:** run the same install line again. Your saved info is kept.
+**Removing:** run `privacyworm uninstall`.
 
-5. **It files opt-outs.** For brokers with web forms, it fills them in with Playwright. For email-based opt-outs, it sends the request with the right legal basis for your state. Some brokers are stubborn and require manual steps - the tool tells you exactly what to do.
+## Use it
 
-6. **It watches for confirmations.** Many brokers send a confirmation email with a link you need to click. `privacyworm inbox check` reads your inbox, validates each link's domain and path against the playbook's allowlist, and shows you the URL before clicking.
+Open **PrivacyWorm** from your Start menu, Applications folder or app launcher (or type `privacyworm` in a terminal). It asks you simple questions the whole way:
 
-7. **It rescans.** Brokers re-scrape your info every few months. Set up `privacyworm rescan` on a cron job and it'll catch new listings as they appear.
+1. **The first time**, you enter your name, where you live, and an email address, then pick a passphrase to lock it. About 3 minutes.
+2. **A check-up** searches each site in the background, then shows you what it found: *"Strong match - matched on your name, city and age. Is this you?"* Press `o` to look at the page, `y` to remove it, `n` if it's someone else.
+3. **For each one you said yes to**, PrivacyWorm opens the site's opt-out form with your details already filled in (or an email draft, for sites that take email). You tick the "I'm not a robot" box and click Submit. That's it.
+4. **Reminders** (you'll be asked once) make your computer open PrivacyWorm when the next check-up is due, usually every couple of months. The next check-up also shows which listings are now gone.
+
+A first check-up takes 10-20 minutes, most of it the computer searching. Later ones are quicker.
+
+## Good to know
+
+We'd rather you hear the gaps now than be surprised by them.
+
+- **We cover 10 of ~200 major US data brokers.** More come via community PRs. The list below is honest about which playbooks have been live-tested and which are scaffolding.
+- **Sites fight automation.** Searches that hit a CAPTCHA are reported as "couldn't check" (never as "clean"), and you can retry them in a visible window. Opt-out forms always leave the final click to you, because that's what gets past their robot checks.
+- **Some brokers require ID verification.** PrivacyWorm cannot do that on your behalf - it tells you what the site is asking for and steps out of the way.
+- **Brokers re-list you.** Most re-scrape every 60-90 days, which is why PrivacyWorm offers reminders.
+- **California residents: use DROP first.** California's Data Removal Operations Platform (drop.oag.ca.gov) reaches the 500+ registered brokers in one request. PrivacyWorm fills the long tail outside that registry.
 
 ## Supported Brokers
 
@@ -75,6 +68,45 @@ The three-step `scan -> review -> optout --approved-only` flow is the recommende
 | Whitepages | fixture_only | dry_run_only | 2026-04-27 | WIP - needs live verification |
 
 Plus mugshot site playbooks for ten of the major sites (mugshots.com, bustedmugshots.com, arrestfacts.com, ...) under `playbooks/mugshots/`. Those are also fixture-only at the moment; the `privacyworm mugshot letters` flow generates a CCPA or GDPR PDF you can send manually.
+
+## For power users
+
+Everything the guided mode does is also a plain command, for scripting:
+
+```bash
+privacyworm checkup                 # the guided scan -> review -> remove loop
+privacyworm scan [--broker spokeo] [--headed]
+privacyworm review                  # approve/reject listings one by one
+privacyworm optout --approved-only  # file approved opt-outs (--no-assist to auto-submit)
+privacyworm status
+privacyworm reminders on|off|status
+privacyworm doctor                  # check Python, playbooks, browser
+privacyworm mugshot scan|optout|letters
+privacyworm social scan|delete|overwrite|delete-account
+privacyworm inbox check             # find + click confirmation links (shows each URL first)
+```
+
+Run `privacyworm --help` or `privacyworm <command> --help` for details.
+
+Settings you can change with environment variables:
+
+| Variable | What it does |
+|---|---|
+| `PRIVACYWORM_BROWSER=chrome\|msedge\|chromium` | Force a browser (default: first of Chrome, Edge, bundled Chromium) |
+| `PRIVACYWORM_BROWSER_PATH` | Use any Chromium-based browser binary (Brave, Vivaldi...) |
+| `PRIVACYWORM_SMTP_HOST/PORT/USER/PASS` | Send email opt-outs directly instead of opening a draft in your mail app |
+| `PRIVACYWORM_CONFIG_DIR` | Keep data somewhere other than `~/.privacyworm` |
+| `PRIVACYWORM_KEEP_RAW_LOG=1` | Also keep an unredacted network log for debugging |
+
+**Developing:** `git clone` the repo, then `uv sync --extra dev --extra mugshot` (or `pip install -e ".[dev,mugshot]"`) and `pytest`.
+
+## How it works
+
+1. **Your profile** is encrypted with Fernet (AES-128-CBC + HMAC-SHA256, key derived from your passphrase with Argon2id) and stored at `~/.privacyworm/profile.yaml.enc`. Your history of listings is encrypted with the same passphrase.
+2. **Each broker is a playbook** - a YAML file describing how to search the site and what its opt-out looks like. No code runs from these files; they're pure data, validated by Pydantic, and URL templates can only use plain `{first}`/`{last}`/`{city}`/`{state}`/`{zip}` placeholders.
+3. **Each listing gets a score** from comparing it with your profile: name, city, state, ZIP, phone, relatives and age. You see the score and the reasons before deciding.
+4. **Nothing is filed without your yes.** Web forms open pre-filled in a visible window; email opt-outs open as a draft in your own mail app (no passwords to configure); sites that need a phone call or ID get step-by-step instructions.
+5. **Re-checks track results.** A listing you asked to remove that no longer shows up is marked gone. One that comes back is flagged so you can remove it again.
 
 ## What about California's DROP system?
 

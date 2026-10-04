@@ -27,7 +27,12 @@ _NAMEY_PATH_SEGMENT = re.compile(r"^(?=.*[-_])(?=.*[A-Z]).+$")
 def get_config_dir() -> Path:
     """Return the config directory, creating it if needed."""
     config_dir = Path(os.environ.get("PRIVACYWORM_CONFIG_DIR", str(DEFAULT_CONFIG_DIR)))
-    config_dir.mkdir(parents=True, exist_ok=True)
+    if not config_dir.exists():
+        config_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            config_dir.chmod(0o700)  # only you can list what's in here
+        except OSError:
+            pass
     return config_dir
 
 

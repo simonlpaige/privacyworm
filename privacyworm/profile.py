@@ -45,6 +45,9 @@ class InboxConfig(BaseModel):
     port: int = 993
     user: str = ""
     pass_env: str = "PRIVACYWORM_INBOX_PASS"
+    # App password, stored inside the encrypted profile. Optional: the
+    # env var named by pass_env still overrides it.
+    password: Optional[str] = None
 
 
 class Profile(BaseModel):
@@ -56,6 +59,9 @@ class Profile(BaseModel):
     emails: list[str] = []
     relatives: list[str] = []
     inbox: Optional[InboxConfig] = None
+    # When the user confirmed (during setup) that this profile is
+    # their own info or that they are the person's authorized agent.
+    attested_at: Optional[str] = None
 
 
 def derive_key(passphrase: str, salt: bytes) -> bytes:
@@ -106,7 +112,21 @@ def decrypt_bytes(blob: bytes, passphrase: str) -> bytes:
 def encrypt_profile(profile: Profile, passphrase: str, path: Path) -> None:
     """Encrypt and write a profile to disk."""
     plaintext = yaml.dump(profile.model_dump(), default_flow_style=False).encode()
-    path.write_bytes(encrypt_bytes(plaintext, passphrase))
+    write_private(path, encrypt_bytes(plaintext, passphrase))
+
+
+def write_private(path: Path, data: bytes) -> None:
+    """Write a file only the current user can read (0600 on Unix)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as f:
+        f.write(data)
+    os.replace(tmp, path)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
 
 
 def decrypt_profile(passphrase: str, path: Path) -> Profile:

@@ -10,7 +10,7 @@ from pathlib import Path
 import yaml
 
 from privacyworm.config import get_config_dir
-from privacyworm.profile import decrypt_bytes, encrypt_bytes
+from privacyworm.profile import decrypt_bytes, encrypt_bytes, write_private
 
 TOKENS_FILENAME = "social_tokens.yaml.enc"
 
@@ -25,7 +25,7 @@ def save_tokens(tokens: dict, passphrase: str, path: Path | None = None) -> None
     if path is None:
         path = get_tokens_path()
     plaintext = yaml.dump(tokens, default_flow_style=False).encode()
-    path.write_bytes(encrypt_bytes(plaintext, passphrase))
+    write_private(path, encrypt_bytes(plaintext, passphrase))
 
 
 def load_tokens(passphrase: str, path: Path | None = None) -> dict:
