@@ -69,6 +69,23 @@ class WebFormBroker(BaseBroker):
         logger.debug(f"Filing opt-out with {self.playbook.display_name}")
         values = self._form_values(listing)
 
+        if assist is not None:
+            # A person is finishing this one, so use their own browser: an
+            # automated window gets flagged by Cloudflare-style checks and
+            # the "I'm not a robot" box can loop forever.
+            from privacyworm.browser import open_in_default_browser
+
+            open_in_default_browser(opt.url)
+            outcome = assist({
+                "kind": "web_form",
+                "broker": self.playbook.display_name,
+                "url": opt.url,
+                "fields": {label: value for label, _sel, value in values},
+                "missed": {},
+                "requires_confirmation": opt.requires_confirmation,
+            })
+            return _outcome_result("web_form", outcome, opt.url)
+
         try:
             with open_browser(headless=(assist is None and not self.headed)) as (_browser, page):
                 page.goto(opt.url, wait_until="domcontentloaded", timeout=30_000)

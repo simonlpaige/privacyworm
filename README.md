@@ -31,24 +31,26 @@ The installer takes a minute or two. It sets up everything PrivacyWorm needs in 
 
 ## Use it
 
-Open **PrivacyWorm** from your Start menu, Applications folder or app launcher (or type `privacyworm` in a terminal). It asks you simple questions the whole way:
+Open **PrivacyWorm** from your Start menu, Applications folder or app launcher (or type `privacyworm` in a terminal). It asks simple questions the whole way:
 
-1. **The first time**, you enter your name, where you live, and an email address, then pick a passphrase to lock it. About 3 minutes.
-2. **A check-up** searches each site in the background, then shows you what it found: *"Strong match - matched on your name, city and age. Is this you?"* Press `o` to look at the page, `y` to remove it, `n` if it's someone else.
-3. **For each one you said yes to**, PrivacyWorm opens the site's opt-out form with your details already filled in (or an email draft, for sites that take email). You tick the "I'm not a robot" box and click Submit. That's it.
-4. **Reminders** (you'll be asked once) make your computer open PrivacyWorm when the next check-up is due, usually every couple of months. The next check-up also shows which listings are now gone.
+1. **The first time**, you enter your name, current and past addresses, phone and email, then pick a passphrase to lock it. About 3 minutes.
+2. **Connect your email** with an app password (PrivacyWorm opens the right page for Gmail, Yahoo, iCloud, Outlook and others). Requests go out from *your* address, so replies come back to you.
+3. **PrivacyWorm emails every registered data broker** - about 780 companies, from the official [California data broker registry](https://cppa.ca.gov/data_broker_registry/), which nearly every US broker has to join no matter where *you* live. People-search sites go first. No browser, so no CAPTCHAs.
+4. **Turn on autopilot** and it runs once a day in the background: it sends the next batch (60 a day by default, so your email account stays in good standing), reads the replies, clicks confirmation links on the broker's own website, follows up after 30 days of silence, sends a final notice at 60, and asks again every year because brokers re-collect.
+5. **You only hear from it when a company insists on something only you can do** - their own web form, an ID check, or a reply the rules can't read. Those land on a short to-do list, and each one opens in your normal browser, so "I'm not a robot" checks work like they always do.
+6. **Brokers that ignore three requests or refuse** go on one consolidated complaint, written for you, to file with the FTC and your state attorney general.
 
-A first check-up takes 10-20 minutes, most of it the computer searching. Later ones are quicker.
+You can also run **Search people-search sites** to see which listings are actually public and remove them one by one; the next search shows which ones are gone.
 
 ## Good to know
 
 We'd rather you hear the gaps now than be surprised by them.
 
-- **We cover 10 of ~200 major US data brokers.** More come via community PRs. The list below is honest about which playbooks have been live-tested and which are scaffolding.
-- **Sites fight automation.** Searches that hit a CAPTCHA are reported as "couldn't check" (never as "clean"), and you can retry them in a visible window. Opt-out forms always leave the final click to you, because that's what gets past their robot checks.
-- **Some brokers require ID verification.** PrivacyWorm cannot do that on your behalf - it tells you what the site is asking for and steps out of the way.
-- **Brokers re-list you.** Most re-scrape every 60-90 days, which is why PrivacyWorm offers reminders.
-- **California residents: use DROP first.** California's Data Removal Operations Platform (drop.oag.ca.gov) reaches the 500+ registered brokers in one request. PrivacyWorm fills the long tail outside that registry.
+- **The law depends on where you live, so the letters do too.** About 20 states (California, Texas, Virginia, Colorado and others) give you a legal right to deletion, and the letter cites yours. Most states, Missouri among them, don't have one yet. Those letters still ask firmly, without claiming a right you don't have. Most brokers honor deletion requests nationwide anyway, and the ones that won't end up on the complaint list. No tool can force a company that the law doesn't, but persistence and complaints move most of them.
+- **Some brokers require ID or their own form.** PrivacyWorm can't do those for you; it puts them on your to-do list with the link and your reference number.
+- **Brokers re-list you.** PrivacyWorm asks every broker again each year and re-checks people-search sites every couple of months.
+- **Autopilot keeps your passphrase in your computer's keychain** (Windows Credential Manager, macOS Keychain) so it can run while you're away. Turning autopilot off removes it.
+- **California residents: use DROP too.** California's Data Removal Operations Platform (drop.oag.ca.gov) reaches registered brokers in one request.
 
 ## Supported Brokers
 
@@ -74,7 +76,10 @@ Plus mugshot site playbooks for ten of the major sites (mugshots.com, bustedmugs
 Everything the guided mode does is also a plain command, for scripting:
 
 ```bash
-privacyworm checkup                 # the guided scan -> review -> remove loop
+privacyworm autopilot run|on|off|status   # email every registered broker, follow up, read replies
+privacyworm todo                    # the brokers that need you
+privacyworm registry update         # refresh the broker list (public data, nothing about you sent)
+privacyworm checkup                 # the guided people-search scan -> review -> remove loop
 privacyworm scan [--broker spokeo] [--headed]
 privacyworm review                  # approve/reject listings one by one
 privacyworm optout --approved-only  # file approved opt-outs (--no-assist to auto-submit)

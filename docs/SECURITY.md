@@ -100,6 +100,14 @@ PrivacyWorm does **not** trust:
 
 If you find a security vulnerability, please open a GitHub issue or email the maintainer directly. We take these seriously and will respond quickly.
 
+## Email requests and autopilot
+
+Deletion requests are sent from your own mailbox using an app password you create for PrivacyWorm. The app password is stored inside your encrypted profile. Each letter includes the details a broker needs to find you: name, other names, current and past addresses, phone and email. Your date of birth is deliberately left out. The letter asks the broker to use those details only to locate and delete your records.
+
+When autopilot is on, your profile passphrase is stored in the operating system's credential store (Windows Credential Manager, macOS Keychain, or the Linux Secret Service) so the daily run can unlock your profile without you. Anyone who can log in as you on that computer could read it, the same as your saved browser passwords. `privacyworm autopilot off` deletes it.
+
+Autopilot reads your inbox with IMAP in read-only mode and only downloads full messages that are replies to your requests (matched by email threading, the `[ref PW-XXXXXX]` tag, or the broker's domain). It opens a confirmation link automatically only when the link is on that broker's own registered domain and the email asks you to verify or confirm; anything else goes on your to-do list.
+
 ## Reminders and shortcuts
 
 `privacyworm reminders on` registers a once-a-day job with your operating system (Task Scheduler on Windows, launchd on macOS, a systemd user timer or cron on Linux). The job runs `privacyworm remind`, which reads only `schedule.json`. It never unlocks your profile, never opens a browser on its own, and never contacts a broker. When a check-up is due it opens the PrivacyWorm window (or shows a notification on Linux) and you take it from there. `privacyworm reminders off` removes the job.

@@ -53,6 +53,24 @@ CREATE TABLE IF NOT EXISTS rescans (
     next_scan_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    broker_id TEXT NOT NULL UNIQUE,
+    broker_name TEXT NOT NULL,
+    to_addr TEXT NOT NULL,
+    ref TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    stage INTEGER NOT NULL DEFAULT 0,
+    cycle INTEGER NOT NULL DEFAULT 1,
+    first_sent_at TEXT,
+    last_sent_at TEXT,
+    next_action_at TEXT,
+    message_ids TEXT NOT NULL DEFAULT '[]',
+    note TEXT,
+    action_url TEXT,
+    updated_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS processed_emails (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     broker TEXT NOT NULL,
@@ -139,6 +157,7 @@ class StateDB:
         self.encrypted = encrypted
         self.passphrase = passphrase
         self.encrypted_path: Path | None = None
+        self.lock_path: Path | None = None
 
         if encrypted:
             if not passphrase:
@@ -149,6 +168,12 @@ class StateDB:
                 )
             self.encrypted_path = get_state_db_path(encrypted=True)
             self.db_path = get_state_db_path(encrypted=False)
+            # Tell background autopilot runs that the working copy is in use.
+            self.lock_path = self.db_path.with_name(".state.lock")
+            try:
+                self.lock_path.write_text(self._now(), encoding="utf-8")
+            except OSError:
+                pass
             if self.encrypted_path.exists():
                 blob = self.encrypted_path.read_bytes()
                 plaintext = decrypt_bytes(blob, passphrase)
@@ -255,6 +280,11 @@ class StateDB:
                 self.db_path.unlink()
             except OSError:
                 pass
+            if self.lock_path is not None:
+                try:
+                    self.lock_path.unlink()
+                except OSError:
+                    pass
 
     def _now(self) -> str:
         return datetime.now(timezone.utc).isoformat()
@@ -398,6 +428,74 @@ class StateDB:
             (broker, uid, self._now()),
         )
         self.conn.commit()
+
+    # -- Email deletion requests (registry sweep) --
+
+    def ensure_request(self, broker_id: str, broker_name: str, to_addr: str, ref: str) -> bool:
+        """Queue a request for a broker if there isn't one. True if newly added."""
+        cur = self.conn.execute(
+            "INSERT OR IGNORE INTO requests (broker_id, broker_name, to_addr, ref, updated_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (broker_id, broker_name, to_addr, ref, self._now()),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def get_requests(self, status: str | tuple[str, ...] | None = None) -> list[dict]:
+        if status is None:
+            rows = self.conn.execute("SELECT * FROM requests ORDER BY broker_name").fetchall()
+        else:
+            statuses = (status,) if isinstance(status, str) else tuple(status)
+            marks = ",".join("?" for _ in statuses)
+            rows = self.conn.execute(
+                f"SELECT * FROM requests WHERE status IN ({marks}) ORDER BY broker_name",  # nosec B608
+                statuses,
+            ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["message_ids"] = json.loads(d.get("message_ids") or "[]")
+            out.append(d)
+        return out
+
+    def get_request(self, request_id: int) -> dict | None:
+        row = self.conn.execute("SELECT * FROM requests WHERE id = ?", (request_id,)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["message_ids"] = json.loads(d.get("message_ids") or "[]")
+        return d
+
+    def update_request(self, request_id: int, **fields) -> None:
+        allowed = {
+            "status", "stage", "cycle", "first_sent_at", "last_sent_at", "next_action_at",
+            "message_ids", "note", "action_url", "to_addr",
+        }
+        sets, params = [], []
+        for key, value in fields.items():
+            if key not in allowed:
+                raise ValueError(f"Unknown request field {key}")
+            if key == "message_ids":
+                value = json.dumps(value)
+            sets.append(f"{key} = ?")
+            params.append(value)
+        sets.append("updated_at = ?")
+        params.append(self._now())
+        params.append(request_id)
+        self.conn.execute(
+            f"UPDATE requests SET {', '.join(sets)} WHERE id = ?", params  # nosec B608 - keys whitelisted
+        )
+        self.conn.commit()
+
+    def request_counts(self) -> dict[str, int]:
+        rows = self.conn.execute("SELECT status, COUNT(*) AS n FROM requests GROUP BY status").fetchall()
+        return {r["status"]: r["n"] for r in rows}
+
+    def sent_since(self, iso: str) -> int:
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS n FROM requests WHERE last_sent_at >= ?", (iso,)
+        ).fetchone()
+        return int(row["n"])
 
     # -- Summary --
 

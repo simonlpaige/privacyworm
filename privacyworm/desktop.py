@@ -302,7 +302,7 @@ def enable_reminders() -> tuple[bool, str]:
             + (f" -Argument {_ps_quote(' '.join(cmd[1:]))}" if cmd[1:] else "") + ";"
             f"$t = New-ScheduledTaskTrigger -Daily -At '{REMIND_HOUR}:00';"
             "$s = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries "
-            "-DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 5);"
+            "-DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 2);"
             "Register-ScheduledTask -TaskName " + _ps_quote(TASK_NAME)
             + " -Action $a -Trigger $t -Settings $s -Force | Out-Null"
         )
@@ -429,14 +429,38 @@ def _open_app_window() -> bool:
     return False
 
 
+def needs_attention(now: datetime | None = None) -> bool:
+    """A check-up is due, or autopilot left something on the to-do list."""
+    now = now or datetime.now(timezone.utc)
+    data = read_schedule()
+    last = _parse(data.get("last_reminded"))
+    if last is not None and now - last < timedelta(days=RENAG_DAYS):
+        return False
+    return is_due(now) or int(data.get("todo") or 0) > 0
+
+
 def remind(force: bool = False) -> str:
-    """Run by the OS scheduler once a day. Quiet unless a check-up is due."""
-    if not force and not should_remind():
-        return "not due"
+    """Run by the OS scheduler once a day.
+
+    Runs autopilot first (if it's on), then opens PrivacyWorm only when a
+    human is actually needed: a check-up is due or the to-do list isn't empty.
+    """
+    try:
+        from privacyworm.autopilot import run_unattended
+
+        run_unattended()
+    except Exception:  # noqa: BLE001 - a background job must never crash loudly
+        pass
+    if not force and not needs_attention():
+        return "nothing needs you"
     data = read_schedule()
     data["last_reminded"] = datetime.now(timezone.utc).isoformat()
     write_schedule(data)
-    _notify(APP_NAME, "Time for your privacy check-up. Brokers re-list people every few months.")
+    todo = int(data.get("todo") or 0)
+    if todo:
+        _notify(APP_NAME, f"{todo} data broker request(s) need you. It usually takes a few minutes.")
+    else:
+        _notify(APP_NAME, "Time for your privacy check-up. Brokers re-list people every few months.")
     if platform() in ("windows", "mac"):
         _open_app_window()
     return "reminded"

@@ -772,6 +772,99 @@ def uninstall(keep_data):
     click.echo("(or 'pip uninstall privacyworm' if you installed it with pip)")
 
 
+
+@cli.command(name="autopilot")
+@click.argument("action", required=False, type=click.Choice(["run", "on", "off", "status"]), default="status")
+@click.option("--dry-run", is_flag=True, help="With 'run': show what would be sent, send nothing.")
+def autopilot_cmd(action, dry_run):
+    """Hands-off email deletion requests to every registered data broker.
+
+    \b
+    privacyworm autopilot run      send the next batch, follow up, read replies
+    privacyworm autopilot on       run it once a day in the background
+    privacyworm autopilot off      stop, and remove the saved passphrase
+    privacyworm autopilot status   progress so far
+    """
+    from privacyworm import autopilot
+    from privacyworm.wizard import Session
+
+    if action == "off":
+        autopilot.disable()
+        click.echo("Autopilot is off.")
+        return
+    if action == "status" and not get_profile_path(encrypted=True).exists():
+        click.echo("Not set up yet. Run 'privacyworm' first.")
+        return
+    profile, db, passphrase = _load_profile_and_state()
+    session = Session(profile, passphrase or "", db)
+    try:
+        if action == "status":
+            p = autopilot.progress(db)
+            click.echo(f"Autopilot is {'on' if autopilot.is_enabled() else 'off'}.")
+            click.echo(
+                f"Brokers: {p['total']} | done {p['won']} | waiting {p['waiting']} | "
+                f"not emailed yet {p['queued']} | need you {p['todo']} | complaint list {p['stuck']}"
+            )
+        elif action == "on":
+            ok, msg = autopilot.enable(passphrase or "")
+            click.echo(msg)
+            if ok and not desktop.reminders_enabled():
+                click.echo(desktop.enable_reminders()[1])
+        else:
+            mailbox = autopilot.mailbox_for(profile)
+            if mailbox is None and not dry_run:
+                click.echo("Email isn't set up. Run 'privacyworm' and choose 'Email all data brokers'.")
+                raise SystemExit(1)
+            summary = autopilot.Campaign(
+                profile, db, mailbox, dry_run=dry_run, log=click.echo,
+                spacing=(0, 0) if dry_run else (4.0, 9.0),
+            ).run()
+            click.echo(", ".join(f"{k}: {v}" for k, v in summary.items() if v) or "Nothing to do today.")
+    finally:
+        session.close()
+
+
+@cli.command(name="todo")
+def todo_cmd():
+    """Work through the brokers that need you (forms, ID, unclear replies)."""
+    from privacyworm import sweep_ui
+    from privacyworm.wizard import Session
+
+    profile, db, passphrase = _load_profile_and_state()
+    session = Session(profile, passphrase or "", db)
+    try:
+        sweep_ui.todo(session)
+    finally:
+        session.close()
+
+
+@cli.group(name="registry")
+def registry_group():
+    """The list of registered data brokers PrivacyWorm emails."""
+
+
+@registry_group.command(name="info")
+def registry_info():
+    """Show how many brokers are on the list and when it was updated."""
+    from privacyworm.registry import list_info
+
+    info = list_info()
+    click.echo(f"{info['count']} brokers, updated {info['updated']} ({info['path']})")
+
+
+@registry_group.command(name="update")
+def registry_update():
+    """Download the latest public data broker registry."""
+    from privacyworm.registry import update as do_update
+
+    try:
+        n = do_update()
+    except Exception as e:  # noqa: BLE001
+        click.echo(f"Couldn't update the registry: {e}")
+        raise SystemExit(1) from e
+    click.echo(f"Updated: {n} brokers.")
+
+
 cli.add_command(_social_group)
 cli.add_command(_mugshot_group)
 

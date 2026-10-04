@@ -1,0 +1,27 @@
+name: Refresh broker registry
+
+on:
+  schedule:
+    - cron: "17 6 3 * *"   # monthly
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - run: python scripts/build_registry.py
+      - uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "Refresh data broker registry"
+          title: "Refresh data broker registry"
+          body: "Monthly update from the California data broker registry."
+          branch: registry-refresh

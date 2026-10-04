@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "privacyworm"
-version = "1.1.0"
+version = "1.2.0"
 description = "An agent that finds your listings on data-broker sites and files opt-out requests. Runs on your machine - your PII never touches a third-party server."
 readme = "README.md"
 license = "MIT"
@@ -34,6 +34,8 @@ dependencies = [
     "colorama>=0.4.6; sys_platform == 'win32'",
     # Used by `test-playbooks` and the extract layer; small and pure-Python.
     "beautifulsoup4>=4.12",
+    # Optional passphrase storage for autopilot (OS keychain).
+    "keyring>=24",
 ]
 
 [project.optional-dependencies]

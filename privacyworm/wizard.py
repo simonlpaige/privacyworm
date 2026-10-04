@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from privacyworm import __version__, desktop, ui
+from privacyworm import __version__, autopilot, desktop, sweep_ui, ui
 from privacyworm.browser import ensure_browser, open_in_default_browser
 from privacyworm.cli_helpers import open_state, unlock_profile
 from privacyworm.config import enable_state_encryption, get_profile_path
@@ -132,7 +132,10 @@ def _first_run() -> Session | None:
         "Nothing is sent anywhere except the removal requests you approve."
     )
     ui.say()
-    ui.para("Setup takes about 3 minutes. Your first check-up takes about 10-20.")
+    ui.para(
+        "Setup takes about 5 minutes. After that PrivacyWorm can run on its own and "
+        "only ask for you when a company insists on something only you can do."
+    )
     ui.say()
     if not ui.yes_no("Ready to start?", default=True):
         ui.say("  No problem. Run PrivacyWorm again whenever you're ready.")
@@ -160,8 +163,16 @@ def _first_run() -> Session | None:
             ok, msg = desktop.enable_reminders()
             (ui.good if ok else ui.warn)(msg)
 
+    ui.title("Next: ask every data broker to delete you")
+    ui.para(
+        "The fastest way to reach hundreds of brokers is email: PrivacyWorm sends each "
+        "registered data broker a deletion request from your address, follows up when "
+        "they go quiet, and reads their replies. No browser, no CAPTCHAs."
+    )
+    if ui.yes_no("Set up email now?", default=True):
+        sweep_ui.run_sweep(session)
     ui.say()
-    if ui.yes_no("Run your first check-up now?", default=True):
+    if ui.yes_no("Also search the big people-search sites for your listings now?", default=False):
         checkup(session)
     return session
 
@@ -225,28 +236,49 @@ def _home(session: Session, suggest_checkup: bool = False) -> None:
     while True:
         ui.title("Home")
         due = _status_lines(session)
-        reminders = "on" if desktop.reminders_enabled() else "off"
+        for line in sweep_ui.describe_progress(session):
+            ui.say(f"  {line}")
+        todo_n = sweep_ui.todo_count(session)
+        if todo_n:
+            ui.warn(f"{todo_n} thing(s) need you.")
+        auto = "on" if autopilot.is_enabled() else "off"
         ui.say()
+        sweep_label = "Email all data brokers (send the next batch)" if sweep_ui.email_ready(session) \
+            else "Email all data brokers - set up (recommended)"
         options = [
-            ("1", "Run a check-up" + (ui.style("  ← due now", fg="yellow") if due else "")),
-            ("2", "See everything that's been found"),
-            ("3", f"Reminders (currently {reminders})"),
-            ("4", "Edit my info"),
-            ("5", "More tools: mugshot sites, social media, email confirmations"),
+            ("1", sweep_label),
+            ("2", f"To-do ({todo_n})" + (ui.style("  ← needs you", fg="yellow") if todo_n else "")),
+            ("3", "Search people-search sites for my listings" + (ui.style("  ← due", fg="yellow") if due else "")),
+            ("4", "See all requests and listings"),
+            ("5", f"Autopilot (currently {auto})"),
+            ("6", "Edit my info"),
+            ("7", "More tools: mugshot sites, social media, registries"),
             ("q", "Quit"),
         ]
-        default = "1" if (due or suggest_checkup) else "q"
+        if todo_n:
+            default = "2"
+        elif not sweep_ui.email_ready(session):
+            default = "1"
+        elif due or suggest_checkup:
+            default = "3"
+        else:
+            default = "q"
         choice = ui.choose("Choose", options, default=default)
         suggest_checkup = False
         if choice == "1":
-            checkup(session)
+            sweep_ui.run_sweep(session)
         elif choice == "2":
-            show_status(session)
+            sweep_ui.todo(session)
         elif choice == "3":
-            reminders_menu()
+            checkup(session)
         elif choice == "4":
-            edit_profile(session)
+            sweep_ui.show_requests(session)
+            show_status(session)
         elif choice == "5":
+            sweep_ui.autopilot_menu(session)
+        elif choice == "6":
+            edit_profile(session)
+        elif choice == "7":
             more_tools(session)
         else:
             ui.say("\n  Bye for now. Your info stays locked on this computer.")
@@ -262,17 +294,10 @@ def _assist(info: dict) -> str:
     ui.say()
     ui.say(ui.style(f"  {info['broker']}", bold=True))
     if kind == "web_form":
-        ui.say("  A browser window opened with their opt-out form, filled in:")
+        ui.say("  Their opt-out form opened in your normal browser. Fill it in with:")
         for label, value in info.get("fields", {}).items():
             ui.say(f"    {label}: {value}")
-        if info.get("missed"):
-            ui.warn("Couldn't find some boxes on the page. Please fill these in yourself:")
-            for label, value in info["missed"].items():
-                ui.say(f"      {label}: {value}")
-        ui.say("  In that window:")
-        ui.say("    1. Check the details look right")
-        ui.say("    2. Tick any \"I'm not a robot\" box")
-        ui.say("    3. Click the Submit / Remove button")
+        ui.say("  Then tick any \"I'm not a robot\" box and click Submit / Remove.")
     elif kind == "email":
         opened = open_in_default_browser(info["mailto"])
         if opened:
@@ -348,28 +373,14 @@ def checkup(session: Session, playbooks_dir=None, label: str = "people-search si
 
     reports = scan_reports(profile, db, playbooks_dir=playbooks_dir, on_start=on_start, on_done=on_done)
 
-    blocked = [r for r in reports if r["status"] == "blocked"]
-    if blocked:
-        ui.say()
-        ui.para(
-            f"{len(blocked)} site(s) blocked the automatic search with a robot check. "
-            "You can try them again in a visible browser window and click through it yourself."
-        )
-        if ui.yes_no("Try those again with a visible window?", default=True):
-            retried = []
-            for r in blocked:
-                retried += scan_reports(
-                    profile, db, headed=True, broker_name=r["broker"],
-                    playbooks_dir=playbooks_dir, on_start=on_start, on_done=on_done,
-                )
-            reports = [r for r in reports if r["status"] != "blocked"] + retried
-
     unsure = [r for r in reports if r["status"] in ("unreadable", "error", "blocked") and r.get("search_url")]
     if unsure:
         ui.say()
         ui.para(
-            f"PrivacyWorm couldn't read the results from {len(unsure)} site(s). That doesn't "
-            "mean you're not listed. You can open their search pages and look yourself."
+            f"PrivacyWorm couldn't read the results from {len(unsure)} site(s) (robot checks or a "
+            "changed layout). That doesn't mean you're not listed - and the email requests cover "
+            "most of these sites anyway. You can also open their search pages in your normal "
+            "browser and look yourself."
         )
         if ui.yes_no("Open those search pages in your browser?", default=False):
             for r in unsure:
@@ -508,6 +519,8 @@ def edit_profile(session: Session) -> None:
         new = ask_new_passphrase()
         session.passphrase = new
         session.db.passphrase = new  # state.db.enc re-encrypts with it on close
+        if autopilot.is_enabled():
+            autopilot.enable(new)  # keep the keychain copy in step
     session.save_profile()
     ui.good("Saved.")
 
@@ -610,6 +623,7 @@ def _start_over(session: Session) -> bool:
         if p.exists():
             p.write_bytes(os.urandom(p.stat().st_size))
     desktop.disable_reminders()
+    autopilot.disable()
     shutil.rmtree(get_config_dir(), ignore_errors=True)
     ui.good("Done. Your info is gone from this computer.")
     ui.para(

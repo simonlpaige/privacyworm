@@ -48,6 +48,13 @@ class InboxConfig(BaseModel):
     # App password, stored inside the encrypted profile. Optional: the
     # env var named by pass_env still overrides it.
     password: Optional[str] = None
+    # Outgoing mail for deletion requests. Filled in from the provider
+    # presets when left empty (see privacyworm.mailer.PROVIDERS).
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None
+    # Max deletion-request emails per day, to stay well under provider
+    # sending limits and out of spam filters.
+    daily_limit: int = 60
 
 
 class Profile(BaseModel):
